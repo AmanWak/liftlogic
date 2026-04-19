@@ -1,26 +1,92 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Neutrals — tinted faintly toward the lime brand hue (128) so surfaces feel cohesive. */
+  --background: oklch(0.16 0.008 128);
+  --surface: oklch(0.21 0.010 128);
+  --surface-2: oklch(0.25 0.012 128);
+  --border: oklch(0.33 0.015 128);
+  --border-strong: oklch(0.42 0.020 128);
+  --foreground: oklch(0.97 0.008 128);
+  --muted: oklch(0.63 0.014 128);
+  --muted-strong: oklch(0.75 0.012 128);
+
+  /* One color, one job. */
+  --accent: oklch(0.88 0.23 128);
+  --accent-dim: oklch(0.70 0.18 128);
+  --danger: oklch(0.70 0.21 25);
+  --warn: oklch(0.82 0.16 85);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-muted: var(--muted);
+  --color-muted-strong: var(--muted-strong);
+
+  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+/* Instrument-panel scaffolding: subtle grid applied to the silhouette frame. */
+.panel-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklch, var(--border) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--border) 55%, transparent) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: -1px -1px;
+}
+
+/* Reticle ticks for the depth rail. */
+.tick {
+  background: var(--border-strong);
+}
+
+/* Discreet vignette for depth on the silhouette panel. */
+.panel-vignette {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 30%, transparent 40%, color-mix(in oklch, var(--background) 70%, transparent) 100%);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Numeric digits should be fixed-width everywhere — this is an instrument. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+@keyframes sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }

@@ -1,20 +1,21 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence } from "framer-motion";
-import { useSensorStream } from "@/lib/useSensorStream";
+import { AnimatePresence, motion } from "framer-motion";
+import { useWorkerStream } from "@/lib/useWorkerStream";
 import { useSettings } from "@/lib/useSettings";
 import { useVoice } from "@/lib/useVoice";
-import { useDemoMode } from "@/lib/useDemoMode";
+import { useDemoWorker } from "@/lib/useDemoWorker";
 import { useLiveErrors } from "@/lib/useLiveErrors";
 import { useConsoleSignature } from "@/lib/useConsoleSignature";
 import { DEFAULT_MOCK_URL } from "@/lib/config";
 import { ConnectionPill } from "@/components/ConnectionPill";
 import { StatusBand } from "@/components/StatusBand";
 import { SensorSilhouette } from "@/components/SensorSilhouette";
-import { RepCard } from "@/components/RepCard";
+import { LiftCard } from "@/components/LiftCard";
 import { SettingsSheet } from "@/components/SettingsSheet";
 import { SessionSummary } from "@/components/SessionSummary";
 import { ModeSwitcher } from "@/components/ModeSwitcher";
+import { WORKER_ERROR_LABEL } from "@/lib/types-worker";
 
 const STORAGE_KEY = "liftlogic:esp-url";
 
@@ -35,26 +36,27 @@ function loadInitialUrl(): string {
   return DEFAULT_MOCK_URL;
 }
 
-// Weighted form score: 0 errors → 100, each error costs 30 pts, floor 10.
-function computeFormScore(reps: { analysis: { errorsDetected: string[] } }[]): number | null {
-  if (reps.length === 0) return null;
-  const total = reps.reduce(
+// Weighted safety score: 0 errors → 100, each flagged error costs 30 pts, floor 10.
+function computeSafetyScore(lifts: { analysis: { errorsDetected: string[] } }[]): number | null {
+  if (lifts.length === 0) return null;
+  const total = lifts.reduce(
     (sum, r) => sum + Math.max(10, 100 - r.analysis.errorsDetected.length * 30),
     0,
   );
-  return Math.round(total / reps.length);
+  return Math.round(total / lifts.length);
 }
 
-export default function Home() {
+export default function WorkerPage() {
   const [url, setUrl] = useState<string>(DEFAULT_MOCK_URL);
   const [ready, setReady] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionStart, setSessionStart] = useState<number | null>(null);
+  const [frozenDurationMs, setFrozenDurationMs] = useState<number | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [streak, setStreak] = useState(0);
   const summaryFiredRef = useRef(false);
-  const lastRepTimeRef = useRef<number | null>(null);
-  const formScoreRef = useRef<number | null>(null);
+  const safetyScoreRef = useRef<number | null>(null);
+  const shiftActive = sessionStart !== null;
 
   useEffect(() => {
     const initial = loadInitialUrl();
@@ -65,7 +67,7 @@ export default function Home() {
 
   const [settings, updateSettings] = useSettings();
   const voice = useVoice(settings.voiceEnabled, settings.premiumVoice);
-  useConsoleSignature("workout");
+  useConsoleSignature("worksite");
 
   const handleCoaching = useCallback(
     (text: string) => {
@@ -74,34 +76,12 @@ export default function Home() {
     [voice],
   );
 
-  const { frame, reps, status, repCount, reset, injectRep, setStatus } = useSensorStream(
+  const { frame, lifts, status, liftCount, reset, injectLift, setStatus } = useWorkerStream(
     ready && !settings.demoMode && settings.streamEnabled ? url : null,
-    { onCoaching: handleCoaching, skipGemini: settings.demoMode },
+    { onCoaching: handleCoaching, skipCoach: settings.demoMode },
   );
 
-  const demo = useDemoMode(settings.demoMode, injectRep);
-
-  // Track time of last rep for gap detection
-  useEffect(() => {
-    if (repCount > 0) lastRepTimeRef.current = Date.now();
-  }, [repCount]);
-
-  // Gap timer: trigger summary when no new rep for setGapSeconds (8 s in demo)
-  const effectiveGapSeconds = settings.demoMode ? 8 : settings.setGapSeconds;
-  useEffect(() => {
-    if (repCount === 0 || summaryFiredRef.current) return;
-    const interval = setInterval(() => {
-      if (!lastRepTimeRef.current || summaryFiredRef.current) return;
-      const gap = (Date.now() - lastRepTimeRef.current) / 1000;
-      if (gap >= effectiveGapSeconds) {
-        summaryFiredRef.current = true;
-        const score = formScoreRef.current ?? 0;
-        setStreak((prev) => (score >= 85 ? prev + 1 : 0));
-        setSummaryOpen(true);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [repCount, effectiveGapSeconds]);
+  const demo = useDemoWorker(settings.demoMode && sessionStart !== null, injectLift);
 
   useEffect(() => {
     if (settings.demoMode) setStatus("demo");
@@ -109,32 +89,25 @@ export default function Home() {
 
   useEffect(() => {
     reset();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: clear session on demo-mode toggle
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: clear shift on demo-mode toggle
     setSessionStart(null);
+    setFrozenDurationMs(null);
     voice.cancel();
     summaryFiredRef.current = false;
-    lastRepTimeRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on demo toggle, not when deps recompute
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on demo toggle
   }, [settings.demoMode]);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- capture session start when the first rep lands
-    if (repCount > 0 && !sessionStart) setSessionStart(Date.now());
-  }, [repCount, sessionStart]);
-
-  const lastRep = reps[0];
-  const lastRepWasClean = lastRep ? lastRep.analysis.errorsDetected.length === 0 : null;
+  const lastLift = lifts[0];
+  const lastLiftWasClean = lastLift ? lastLift.analysis.errorsDetected.length === 0 : null;
   const activeFrame = settings.demoMode ? demo.frame : frame;
   const baselineS2Pitch = activeFrame?.s2.pitch ?? null;
   const { flashTrigger } = useLiveErrors(activeFrame, baselineS2Pitch);
-  // Shallow reps (insufficient_depth) don't count toward rep count or form score
-  const countedReps = reps.filter((r) => !r.analysis.errorsDetected.includes("insufficient_depth"));
-  const effectiveRepCount = countedReps.length;
-  const effectiveCleanReps = countedReps.filter((r) => r.analysis.errorsDetected.length === 0).length;
-  const formScore = computeFormScore(countedReps);
-  useEffect(() => { formScoreRef.current = formScore; }, [formScore]);
+  const safeLifts = lifts.filter((r) => r.analysis.errorsDetected.length === 0).length;
+  const safetyScore = computeSafetyScore(lifts);
+  useEffect(() => { safetyScoreRef.current = safetyScore; }, [safetyScore]);
   const now = Date.now(); // eslint-disable-line react-hooks/purity -- snapshot used only by SessionSummary on open
-  const sessionDurationMs = sessionStart ? now - sessionStart : 0;
+  const sessionDurationMs =
+    frozenDurationMs ?? (sessionStart ? now - sessionStart : 0);
 
   const handleSave = (nextUrl: string) => {
     const n = normalizeUrl(nextUrl);
@@ -151,28 +124,61 @@ export default function Home() {
   const handleReset = () => {
     reset();
     setSessionStart(null);
+    setFrozenDurationMs(null);
     voice.cancel();
     setSettingsOpen(false);
     setSummaryOpen(false);
     summaryFiredRef.current = false;
-    lastRepTimeRef.current = null;
     if (settings.demoMode) demo.replay();
+  };
+
+  const handleStartShift = () => {
+    reset();
+    voice.cancel();
+    summaryFiredRef.current = false;
+    setSummaryOpen(false);
+    setFrozenDurationMs(null);
+    setSessionStart(Date.now());
+    if (settings.demoMode) demo.replay();
+  };
+
+  const handleEndShift = () => {
+    if (summaryFiredRef.current || !shiftActive) return;
+    summaryFiredRef.current = true;
+    const duration = sessionStart ? Date.now() - sessionStart : 0;
+    setFrozenDurationMs(duration);
+    setSessionStart(null);
+    const score = safetyScoreRef.current ?? 0;
+    setStreak((prev) => (score >= 85 ? prev + 1 : 0));
+    setSummaryOpen(true);
+  };
+
+  const handleNewShift = () => {
+    handleStartShift();
   };
 
   return (
     <main
+      data-mode="worksite"
       className="mx-auto w-full max-w-[420px] px-3 pb-10"
-      style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+      style={{
+        paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+        // Re-skin the accent for worksite mode: lime (128) → hi-vis construction orange (55).
+        // Set as inline CSS vars because Tailwind v4's Turbopack pipeline strips attribute-
+        // selector overrides of OKLCH-backed vars at build time.
+        ["--accent" as string]: "oklch(0.78 0.185 55)",
+        ["--accent-dim" as string]: "oklch(0.60 0.14 55)",
+      }}
     >
       <header className="mb-3 flex items-center justify-between gap-3 border border-border bg-surface px-3 py-2">
         <span
           className="font-display text-base font-semibold tracking-tight text-foreground"
           style={{ letterSpacing: "-0.01em" }}
         >
-          AURELIUS
+          liftlogic
         </span>
         <div className="flex flex-none items-center gap-1.5">
-          <ModeSwitcher active="workout" />
+          <ModeSwitcher active="worksite" />
           <ConnectionPill status={status} onClick={() => setSettingsOpen(true)} />
           <button
             onClick={() => setSettingsOpen(true)}
@@ -199,28 +205,32 @@ export default function Home() {
 
       <div className="space-y-3">
         <StatusBand
-          repCount={effectiveRepCount}
-          cleanReps={effectiveCleanReps}
-          formScore={formScore}
+          repCount={liftCount}
+          cleanReps={safeLifts}
+          formScore={safetyScore}
           startedAt={sessionStart}
-          lastRepWasClean={lastRepWasClean}
+          frozenMs={frozenDurationMs}
+          lastRepWasClean={lastLiftWasClean}
           streak={streak}
+          unitLabel="lifts"
+          scoreLabel="safe"
+          cleanLabel="safe"
         />
 
         <SensorSilhouette frame={activeFrame} baselineS2Pitch={baselineS2Pitch} flashTrigger={flashTrigger} />
 
-        <section aria-label="coaching event log" className="pt-2">
+        <section aria-label="worksite event log" className="pt-2">
           <div className="flex items-baseline justify-between px-1 pb-2">
             <div className="flex items-baseline gap-2">
               <h2 className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
-                event log
+                lift log
               </h2>
               <span className="font-mono text-[10px] text-muted">
-                · {String(reps.length).padStart(2, "0")}
+                · {String(lifts.length).padStart(2, "0")}
               </span>
             </div>
             <div className="flex items-center gap-3">
-              {settings.demoMode && demo.completed && (
+              {shiftActive && settings.demoMode && demo.completed && (
                 <button
                   onClick={demo.replay}
                   className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent hover:brightness-110"
@@ -228,36 +238,82 @@ export default function Home() {
                   replay ↻
                 </button>
               )}
-              {reps.length > 0 && (
+              {shiftActive ? (
                 <button
-                  onClick={handleReset}
-                  className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted hover:text-foreground"
+                  onClick={handleEndShift}
+                  className="border border-danger/50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-danger hover:bg-danger/10"
                 >
-                  clear
+                  end shift
                 </button>
-              )}
+              ) : lifts.length > 0 ? (
+                <button
+                  onClick={handleStartShift}
+                  className="border border-accent/50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-accent hover:bg-accent/10"
+                >
+                  new shift
+                </button>
+              ) : null}
             </div>
           </div>
 
-          <AnimatePresence initial={false}>
-            {reps.length === 0 ? (
-              <div className="border border-dashed border-border px-5 py-10 text-center">
+          <AnimatePresence initial={false} mode="wait">
+            {!shiftActive && lifts.length === 0 ? (
+              <motion.div
+                key="standby"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.24 }}
+                className="border border-dashed border-border px-5 py-8 text-center"
+              >
                 <div className="mx-auto mb-3 h-px w-10 bg-border-strong" />
                 <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
-                  {settings.demoMode ? "demo · priming" : "awaiting first rep"}
+                  shift · standby
+                </div>
+                <div className="mt-2 mb-5 text-sm text-muted-strong text-balance">
+                  {settings.demoMode
+                    ? "Start the shift to kick off the scripted demo — clean, back-rounded, stiff-leg."
+                    : "Start the shift to begin logging lifts. Stop it when you clock out or take a break."}
+                </div>
+                <button
+                  onClick={handleStartShift}
+                  className="bg-accent px-5 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.24em] text-background hover:brightness-95"
+                >
+                  start shift
+                </button>
+              </motion.div>
+            ) : shiftActive && lifts.length === 0 ? (
+              <motion.div
+                key="awaiting"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.24 }}
+                className="border border-dashed border-border px-5 py-10 text-center"
+              >
+                <div className="mx-auto mb-3 h-px w-10 bg-border-strong" />
+                <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
+                  shift · live
                 </div>
                 <div className="mt-2 text-sm text-muted-strong text-balance">
                   {settings.demoMode
-                    ? "Seven scripted reps every 3.5 s — the last is intentionally shallow to demo the redo feature."
-                    : "Start your workout — each rep drops into the log with AI-generated coaching."}
+                    ? "Three scripted lifts incoming — one clean, one back-rounded, one stiff-leg."
+                    : "Pick something up — each lift drops into the log with AI-generated safety coaching."}
                 </div>
-              </div>
+              </motion.div>
             ) : (
-              <div className="border-t border-border">
-                {reps.map((rep) => (
-                  <RepCard key={rep.analysis.repNumber} rep={rep} />
+              <motion.div
+                key="log"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.24 }}
+                className="border-t border-border"
+              >
+                {lifts.map((lift) => (
+                  <LiftCard key={lift.analysis.liftNumber} lift={lift} />
                 ))}
-              </div>
+              </motion.div>
             )}
           </AnimatePresence>
         </section>
@@ -275,12 +331,17 @@ export default function Home() {
 
       <SessionSummary
         open={summaryOpen}
-        reps={countedReps}
-        formScore={formScore}
+        reps={lifts}
+        formScore={safetyScore}
         durationMs={sessionDurationMs}
         streak={streak}
         onClose={() => setSummaryOpen(false)}
-        onNewSet={handleReset}
+        onNewSet={handleNewShift}
+        recapEndpoint="/api/worker-recap"
+        errorLabels={WORKER_ERROR_LABEL}
+        unitLabel="lifts"
+        headerLabel="shift recap · summary"
+        newButtonLabel="new shift"
       />
     </main>
   );
