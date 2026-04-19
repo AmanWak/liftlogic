@@ -80,6 +80,15 @@ export function SettingsSheet({
     setValue(currentUrl);
   }, [currentUrl, open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -97,14 +106,19 @@ export function SettingsSheet({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ duration: 0.38, ease: EASE }}
-            className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-surface"
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-sheet-title"
+            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col border-t border-border bg-surface"
           >
             {/* header strip */}
-            <div className="flex items-center justify-between border-b border-border px-5 py-3">
+            <div className="flex flex-none items-center justify-between border-b border-border px-5 py-3">
               <div className="flex items-center gap-3">
                 <span className="h-2 w-2 rounded-full bg-accent" />
-                <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
+                <span
+                  id="settings-sheet-title"
+                  className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted"
+                >
                   uplink · configure
                 </span>
               </div>
@@ -117,7 +131,10 @@ export function SettingsSheet({
               </button>
             </div>
 
-            <div className="px-5 pt-5">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto px-5 pt-5"
+              style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
+            >
               <div className="mb-4">
                 <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
                   feedback

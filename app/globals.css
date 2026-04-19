@@ -39,9 +39,7 @@
 
 html,
 body {
-  overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
-  overflow-x: hidden;
 }
 
 body {
@@ -50,6 +48,8 @@ body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   font-feature-settings: "cv11", "ss01", "ss03";
+  overscroll-behavior-y: none;
+  overflow-x: clip;
 }
 
 /* Instrument-panel scaffolding: subtle grid applied to the silhouette frame. */

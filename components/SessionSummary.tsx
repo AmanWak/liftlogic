@@ -61,6 +61,15 @@ export function SessionSummary({
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  useEffect(() => {
     if (!open || reps.length === 0) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: reset when sheet opens or retried
     setRecap(null);
@@ -117,14 +126,19 @@ export function SessionSummary({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ duration: 0.38, ease: EASE }}
-            className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-surface"
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="session-summary-title"
+            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col border-t border-border bg-surface"
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-border px-5 py-3">
+            <div className="flex flex-none items-center justify-between border-b border-border px-5 py-3">
               <div className="flex items-center gap-3">
                 <span className="h-2 w-2 rounded-full bg-accent" />
-                <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
+                <span
+                  id="session-summary-title"
+                  className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted"
+                >
                   {headerLabel}
                 </span>
               </div>
@@ -137,7 +151,10 @@ export function SessionSummary({
               </button>
             </div>
 
-            <div className="px-5 pt-5">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto px-5 pt-5"
+              style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
+            >
               {/* Streak callout */}
               {streak >= 2 && (
                 <div className="mb-4 border border-accent/40 bg-accent/5 px-4 py-2.5">

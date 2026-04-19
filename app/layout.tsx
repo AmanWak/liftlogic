@@ -38,8 +38,6 @@ export const viewport: Viewport = {
   themeColor: "#070a06",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
 };
 
@@ -51,9 +49,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${display.variable} ${body.variable} ${mono.variable} h-full antialiased`}
+      className={`${display.variable} ${body.variable} ${mono.variable} antialiased`}
     >
-      <body className="min-h-full bg-background text-foreground font-body">
+      <body className="min-h-dvh bg-background text-foreground font-body">
         {children}
       </body>
     </html>
