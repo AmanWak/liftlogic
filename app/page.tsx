@@ -131,12 +131,33 @@ export default function Home() {
   const lastRep = reps[0];
   const lastRepWasClean = lastRep ? lastRep.analysis.errorsDetected.length === 0 : null;
   const activeFrame = settings.demoMode ? demo.frame : frame;
-  const baselineS2Pitch = activeFrame?.s2.pitch ?? null;
+
+  // Snapshot lumbar baseline from the first upright frame and hold it, so that
+  // lumbar_flexion errors trigger when the rep bends s2.pitch away from neutral.
+  // Using the live frame as its own baseline would always produce delta = 0.
+  const [baselineS2Pitch, setBaselineS2Pitch] = useState<number | null>(null);
+  const baselineLockedRef = useRef(false);
+  useEffect(() => {
+    if (!activeFrame || baselineLockedRef.current) return;
+    baselineLockedRef.current = true;
+    setBaselineS2Pitch(activeFrame.s2.pitch);
+  }, [activeFrame]);
+  useEffect(() => {
+    // Reset baseline capture on demo toggle
+    baselineLockedRef.current = false;
+    setBaselineS2Pitch(null);
+  }, [settings.demoMode]);
   const { flashTrigger } = useLiveErrors(activeFrame, baselineS2Pitch);
   const { fallTrigger } = useFallDetector(activeFrame, settings.fallDetectionEnabled);
 
+  // `voice` returns a fresh object each render, so a naive [fallTrigger, voice]
+  // dep list re-runs every render and keeps re-opening the overlay after the
+  // user dismisses it. Track the last-handled trigger value via a ref so we
+  // only respond to new detector events, not to voice identity churn.
+  const lastHandledFallRef = useRef(0);
   useEffect(() => {
-    if (fallTrigger === 0) return;
+    if (fallTrigger === lastHandledFallRef.current) return;
+    lastHandledFallRef.current = fallTrigger;
     voice.cancel();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: open alert modal in response to detector event
     setFallAlertOpen(true);

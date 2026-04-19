@@ -1,5 +1,5 @@
 "use client";
-import { AnimatePresence, motion, useAnimation, useReducedMotion } from "framer-motion";
+import { animate, AnimatePresence, motion, useAnimation, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SensorFrame } from "@/lib/types";
 import { THRESHOLDS } from "@/lib/config";
@@ -135,6 +135,24 @@ function solveFrontal(
 
 export function SensorSilhouette({ frame, baselineS2Pitch, flashTrigger = 0, fallActive = false }: Props) {
   const flashControls = useAnimation();
+
+  // SVG rotation for the "fall forward" animation. `style={{ transformOrigin }}`
+  // is unreliable on SVG <g> across browsers (CSS px vs viewBox units), so we
+  // drive the native SVG `transform="rotate(deg cx cy)"` attribute via a
+  // motion value instead.
+  const fallAngle = useMotionValue(0);
+  useEffect(() => {
+    const controls = animate(fallAngle, fallActive ? 90 : 0, {
+      type: "spring",
+      stiffness: 85,
+      damping: 14,
+    });
+    return () => controls.stop();
+  }, [fallActive, fallAngle]);
+  const sagittalTransform = useTransform(
+    fallAngle,
+    (a) => `rotate(${a} ${SIDE_FOOT_X} ${FOOT_Y})`,
+  );
   useEffect(() => {
     if (flashTrigger === 0) return;
     void flashControls.start({ opacity: [0.28, 0], transition: { duration: 0.22, ease: "easeOut" } });
@@ -299,12 +317,8 @@ export function SensorSilhouette({ frame, baselineS2Pitch, flashTrigger = 0, fal
             strokeDasharray="2 6"
           />
 
-          {/* Sagittal skeleton — rotates forward on fall */}
-          <motion.g
-            style={{ transformOrigin: `${SIDE_FOOT_X}px ${FOOT_Y}px` }}
-            animate={{ rotate: fallActive ? 88 : 0 }}
-            transition={{ duration: 0.7, type: "spring", stiffness: 90, damping: 14 }}
-          >
+          {/* Sagittal skeleton — rotates forward on fall via SVG transform attr */}
+          <motion.g transform={sagittalTransform}>
             {/* Foot bracket */}
             <Bone x1={SIDE_FOOT_X - 5} y1={FOOT_Y} x2={SIDE_FOOT_X + 14} y2={FOOT_Y} color={shinColor} t={springT} width={2} />
 

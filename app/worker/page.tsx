@@ -107,8 +107,12 @@ export default function WorkerPage() {
   const { flashTrigger } = useLiveErrors(activeFrame, baselineS2Pitch);
   const { fallTrigger } = useFallDetector(activeFrame, settings.fallDetectionEnabled);
 
+  // `voice` is a new object each render; guard against re-opening on every
+  // render by tracking the last-handled trigger ordinal.
+  const lastHandledFallRef = useRef(0);
   useEffect(() => {
-    if (fallTrigger === 0) return;
+    if (fallTrigger === lastHandledFallRef.current) return;
+    lastHandledFallRef.current = fallTrigger;
     voice.cancel();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: open alert modal in response to detector event
     setFallAlertOpen(true);
