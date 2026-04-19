@@ -19,6 +19,7 @@ export function StatusBand({
   frozenMs,
   lastRepWasClean,
   streak,
+  repTarget,
   unitLabel = "reps",
   scoreLabel = "form",
   cleanLabel = "clean",
@@ -30,6 +31,7 @@ export function StatusBand({
   frozenMs?: number | null;
   lastRepWasClean: boolean | null;
   streak: number;
+  repTarget?: number;
   unitLabel?: string;
   scoreLabel?: string;
   cleanLabel?: string;
@@ -37,6 +39,10 @@ export function StatusBand({
   const now = useClock();
   const elapsed = frozenMs ?? (startedAt ? now - startedAt : 0);
   const score = formScore;
+  const normalizedRepTarget = typeof repTarget === "number" && repTarget > 0 ? repTarget : null;
+  const indicatorTotal = normalizedRepTarget ? Math.max(10, normalizedRepTarget) : Math.max(10, repCount + 2);
+  const indicatorFilled = normalizedRepTarget ? Math.min(repCount, indicatorTotal) : repCount;
+  const cleanDenominator = normalizedRepTarget ?? repCount;
 
   const scoreColor =
     score === null
@@ -106,7 +112,7 @@ export function StatusBand({
               {String(repCount).padStart(2, "0")}
             </motion.div>
           </AnimatePresence>
-          <Scale total={Math.max(10, repCount + 2)} filled={repCount} />
+          <Scale total={indicatorTotal} filled={indicatorFilled} />
         </Readout>
 
         <Readout label={scoreLabel} align="right">
@@ -121,7 +127,7 @@ export function StatusBand({
             <span className="num text-muted-strong">
               {String(cleanReps).padStart(2, "0")}
               <span className="text-muted">/</span>
-              {String(repCount).padStart(2, "0")}
+              {String(cleanDenominator).padStart(2, "0")}
             </span>
           </div>
         </Readout>

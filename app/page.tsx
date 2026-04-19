@@ -205,6 +205,7 @@ export default function Home() {
           startedAt={sessionStart}
           lastRepWasClean={lastRepWasClean}
           streak={streak}
+          repTarget={settings.repsPerSetTarget}
         />
 
         <SensorSilhouette frame={activeFrame} baselineS2Pitch={baselineS2Pitch} flashTrigger={flashTrigger} />
@@ -267,6 +268,7 @@ export default function Home() {
         open={settingsOpen}
         currentUrl={url}
         settings={settings}
+        showWorkoutRepTarget
         onSettingsChange={updateSettings}
         onClose={() => setSettingsOpen(false)}
         onSave={handleSave}

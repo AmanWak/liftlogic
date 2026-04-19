@@ -7,6 +7,7 @@ export interface Settings {
   demoMode: boolean;
   streamEnabled: boolean;
   setGapSeconds: number;
+  repsPerSetTarget: number;
 }
 
 const STORAGE_KEY = "liftlogic:settings";
@@ -16,6 +17,7 @@ const DEFAULTS: Settings = {
   demoMode: false,
   streamEnabled: true,
   setGapSeconds: 20,
+  repsPerSetTarget: 10,
 };
 
 function load(): Settings {
@@ -32,6 +34,10 @@ function load(): Settings {
       setGapSeconds: typeof parsed.setGapSeconds === "number" && parsed.setGapSeconds > 0
         ? parsed.setGapSeconds
         : DEFAULTS.setGapSeconds,
+      repsPerSetTarget:
+        typeof parsed.repsPerSetTarget === "number" && parsed.repsPerSetTarget >= 1 && parsed.repsPerSetTarget <= 50
+          ? parsed.repsPerSetTarget
+          : DEFAULTS.repsPerSetTarget,
     };
   } catch {
     return DEFAULTS;

@@ -8,6 +8,7 @@ interface Props {
   open: boolean;
   currentUrl: string;
   settings: Settings;
+  showWorkoutRepTarget?: boolean;
   onSettingsChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
   onSave: (url: string) => void;
@@ -68,6 +69,7 @@ export function SettingsSheet({
   open,
   currentUrl,
   settings,
+  showWorkoutRepTarget = false,
   onSettingsChange,
   onClose,
   onSave,
@@ -197,6 +199,31 @@ export function SettingsSheet({
                   <span className="font-mono text-[10px] uppercase tracking-wider text-muted">sec</span>
                 </div>
               </div>
+
+              {showWorkoutRepTarget && (
+                <div className="mb-4">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
+                    set target · workout
+                  </span>
+                  <div className="mt-1.5 flex items-center gap-3 border border-border bg-surface-2 px-3 py-2.5">
+                    <span className="flex-1 font-mono text-[10px] uppercase tracking-[0.22em] text-foreground">
+                      reps per set
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={settings.repsPerSetTarget}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (v >= 1 && v <= 50) onSettingsChange({ repsPerSetTarget: v });
+                      }}
+                      className="w-14 border border-border bg-surface px-2 py-1 text-center font-mono text-sm text-foreground outline-none focus:border-accent"
+                    />
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-muted">reps</span>
+                  </div>
+                </div>
+              )}
 
               <label className="block">
                 <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
