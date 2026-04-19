@@ -32,10 +32,6 @@ export const metadata: Metadata = {
     title: "LiftLogic",
     statusBarStyle: "black-translucent",
   },
-  icons: {
-    icon: "/icon.svg",
-    apple: "/apple-touch-icon.png",
-  },
 };
 
 export const viewport: Viewport = {
