@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useWorkerStream } from "@/lib/useWorkerStream";
 import { useSettings } from "@/lib/useSettings";
 import { useVoice } from "@/lib/useVoice";
-import { useDemoWorker } from "@/lib/useDemoWorker";
+import { useDemoWorker, type DemoLiftKind } from "@/lib/useDemoWorker";
 import { useLiveErrors } from "@/lib/useLiveErrors";
 import { useFallDetector } from "@/lib/useFallDetector";
 import { useConsoleSignature } from "@/lib/useConsoleSignature";
@@ -17,6 +17,7 @@ import { SettingsSheet } from "@/components/SettingsSheet";
 import { SessionSummary } from "@/components/SessionSummary";
 import { ModeSwitcher } from "@/components/ModeSwitcher";
 import { FallAlertOverlay } from "@/components/FallAlertOverlay";
+import { DemoWorkerPanel } from "@/components/DemoWorkerPanel";
 import { WORKER_ERROR_LABEL } from "@/lib/types-worker";
 
 const STORAGE_KEY = "liftlogic:esp-url";
@@ -148,7 +149,6 @@ export default function WorkerPage() {
     setSettingsOpen(false);
     setSummaryOpen(false);
     summaryFiredRef.current = false;
-    if (settings.demoMode) demo.replay();
   };
 
   const handleStartShift = () => {
@@ -158,7 +158,6 @@ export default function WorkerPage() {
     setSummaryOpen(false);
     setFrozenDurationMs(null);
     setSessionStart(Date.now());
-    if (settings.demoMode) demo.replay();
   };
 
   const handleEndShift = () => {
@@ -179,9 +178,10 @@ export default function WorkerPage() {
   return (
     <main
       data-mode="worksite"
-      className="mx-auto w-full max-w-[420px] px-3 pb-10"
+      className="mx-auto w-full max-w-[420px] px-3"
       style={{
         paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+        paddingBottom: settings.demoMode ? "10rem" : "2.5rem",
         // Re-skin the accent for worksite mode: lime (128) → hi-vis construction orange (55).
         // Set as inline CSS vars because Tailwind v4's Turbopack pipeline strips attribute-
         // selector overrides of OKLCH-backed vars at build time.
@@ -249,22 +249,6 @@ export default function WorkerPage() {
               </span>
             </div>
             <div className="flex items-center gap-3">
-              {shiftActive && settings.demoMode && (
-                <button
-                  onClick={demo.triggerFall}
-                  className="border border-danger/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-danger hover:bg-danger/10"
-                >
-                  simulate fall
-                </button>
-              )}
-              {shiftActive && settings.demoMode && demo.completed && (
-                <button
-                  onClick={demo.replay}
-                  className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent hover:brightness-110"
-                >
-                  replay ↻
-                </button>
-              )}
               {shiftActive ? (
                 <button
                   onClick={handleEndShift}
@@ -299,7 +283,7 @@ export default function WorkerPage() {
                 </div>
                 <div className="mt-2 mb-5 text-sm text-muted-strong text-balance">
                   {settings.demoMode
-                    ? "Start the shift to kick off the scripted demo — clean, back-rounded, stiff-leg."
+                    ? "Start the shift, then tap a button below to inject lifts into the log."
                     : "Start the shift to begin logging lifts. Stop it when you clock out or take a break."}
                 </div>
                 <button
@@ -324,7 +308,7 @@ export default function WorkerPage() {
                 </div>
                 <div className="mt-2 text-sm text-muted-strong text-balance">
                   {settings.demoMode
-                    ? "Three scripted lifts incoming — one clean, one back-rounded, one stiff-leg."
+                    ? "Tap a button below to inject a lift into the log."
                     : "Pick something up — each lift drops into the log with AI-generated safety coaching."}
                 </div>
               </motion.div>
@@ -372,6 +356,15 @@ export default function WorkerPage() {
         unitLabel="lifts"
         headerLabel="shift recap · summary"
         newButtonLabel="new shift"
+      />
+
+      <DemoWorkerPanel
+        open={settings.demoMode}
+        isAnimating={demo.isAnimating}
+        shiftActive={shiftActive}
+        onTrigger={(kind: DemoLiftKind) => demo.triggerLift(kind)}
+        onFall={demo.triggerFall}
+        onReset={handleReset}
       />
 
       <FallAlertOverlay open={fallAlertOpen} onDismiss={() => setFallAlertOpen(false)} />

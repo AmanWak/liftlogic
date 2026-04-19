@@ -3,25 +3,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { SensorFrame } from "./types";
 import type { LiftAnalysis, WorkerFormError } from "./types-worker";
 
-const LIFT_INTERVAL_MS = 4000;
-const TOTAL_LIFTS = 3;
 const FRAME_HZ = 30;
+
+export type DemoLiftKind =
+  | "clean"
+  | "back_rounded"
+  | "stiff_leg_lift"
+  | "overloaded_lean"
+  | "asymmetric_load";
 
 interface ScriptedLift {
   errors: WorkerFormError[];
   base: Omit<LiftAnalysis, "liftNumber" | "errorsDetected" | "durationMs">;
   durationMs: number;
-  torsoPeak: number;    // deepest s1 pitch (negative)
-  thighPeak: number;    // deepest (s3+s4)/2 pitch (negative)
-  lumbarPeak: number;   // max |s2 - baseline| at bottom (positive magnitude)
-  legRollSplit: number; // peak s3-s4 roll split (positive puts more on s3)
+  torsoPeak: number;      // deepest s1 pitch (negative)
+  thighPeak: number;      // deepest (s3+s4)/2 pitch (negative)
+  lumbarPeak: number;     // max |s2 - baseline| at bottom (positive magnitude)
+  legRollSplit: number;   // peak s3-s4 roll split
   torsoRollSplit: number; // peak s1-s2 roll split
 }
 
-// 3 scripted lifts: clean hip-hinge, back-rounded, stiff-leg.
-const SCRIPT: ScriptedLift[] = [
-  {
-    // Clean hip-hinge lift — legs drive, back stays near neutral.
+const SCRIPT_BY_KIND: Record<DemoLiftKind, ScriptedLift> = {
+  clean: {
     errors: [],
     base: {
       maxTorsoFlexion: 58,
@@ -37,8 +40,7 @@ const SCRIPT: ScriptedLift[] = [
     legRollSplit: 0,
     torsoRollSplit: 0,
   },
-  {
-    // Back-rounded lift — lumbar spikes 35° at the bottom.
+  back_rounded: {
     errors: ["back_rounded"],
     base: {
       maxTorsoFlexion: 62,
@@ -54,8 +56,7 @@ const SCRIPT: ScriptedLift[] = [
     legRollSplit: 0,
     torsoRollSplit: 0,
   },
-  {
-    // Stiff-leg lift — torso folds hard, thighs barely move.
+  stiff_leg_lift: {
     errors: ["stiff_leg_lift"],
     base: {
       maxTorsoFlexion: 72,
@@ -71,7 +72,39 @@ const SCRIPT: ScriptedLift[] = [
     legRollSplit: 0,
     torsoRollSplit: 0,
   },
-];
+  overloaded_lean: {
+    errors: ["overloaded_lean"],
+    base: {
+      maxTorsoFlexion: 82,
+      maxLumbarDelta: 18,
+      avgThighFlexion: 22,
+      maxLegAsymmetry: 4,
+      maxTorsoSideBend: 5,
+    },
+    durationMs: 3500,
+    torsoPeak: -82,
+    thighPeak: -30,
+    lumbarPeak: 18,
+    legRollSplit: 0,
+    torsoRollSplit: 0,
+  },
+  asymmetric_load: {
+    errors: ["asymmetric_load"],
+    base: {
+      maxTorsoFlexion: 60,
+      maxLumbarDelta: 10,
+      avgThighFlexion: 25,
+      maxLegAsymmetry: 16,
+      maxTorsoSideBend: 14,
+    },
+    durationMs: 3300,
+    torsoPeak: -60,
+    thighPeak: -38,
+    lumbarPeak: 10,
+    legRollSplit: 18,
+    torsoRollSplit: 14,
+  },
+};
 
 const jitter = (range: number) => (Math.random() * 2 - 1) * range;
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -88,7 +121,6 @@ function makeFrame(t: number, script: ScriptedLift): SensorFrame {
   const d = liftDepthT(t);
 
   const s1Pitch = lerp(0, script.torsoPeak, d);
-  // Lumbar baseline is 0; drift grows with depth on back_rounded lifts.
   const s2Pitch = lerp(0, script.torsoPeak * 0.3, d) - lerp(0, script.lumbarPeak, d);
 
   const thighBase = lerp(0, script.thighPeak, d);
@@ -107,10 +139,10 @@ function makeFrame(t: number, script: ScriptedLift): SensorFrame {
   };
 }
 
-function buildAnalysis(index: number, script: ScriptedLift): LiftAnalysis {
+function buildAnalysis(liftNumber: number, script: ScriptedLift): LiftAnalysis {
   const { base, errors, durationMs } = script;
   return {
-    liftNumber: index + 1,
+    liftNumber,
     maxTorsoFlexion: round(Math.max(0, base.maxTorsoFlexion + jitter(2))),
     maxLumbarDelta: round(Math.max(0, base.maxLumbarDelta + jitter(2))),
     avgThighFlexion: round(Math.max(0, base.avgThighFlexion + jitter(2))),
@@ -121,17 +153,17 @@ function buildAnalysis(index: number, script: ScriptedLift): LiftAnalysis {
   };
 }
 
-export interface UseDemoWorkerResult {
-  isPlaying: boolean;
-  completed: boolean;
-  frame: SensorFrame | null;
-  replay: () => void;
-  triggerFall: () => void;
+function neutralFrame(): SensorFrame {
+  return {
+    t: Date.now(),
+    s1: { roll: 0, pitch: 0 },
+    s2: { roll: 0, pitch: 0 },
+    s3: { roll: 0, pitch: 0 },
+    s4: { roll: 0, pitch: 0 },
+  };
 }
 
 // Synthetic fall profile: upright baseline → rapid pitch collapse → stillness.
-// Times chosen to naturally pass the pitch-only heuristic in useFallDetector —
-// the same code path will fire on real hardware when a worker hits the deck.
 const FALL_BASELINE_MS = 700;
 const FALL_RAMP_MS = 400;
 const FALL_HOLD_MS = 2200;
@@ -145,7 +177,6 @@ function makeFallFrame(elapsedMs: number): SensorFrame {
     const t = (elapsedMs - FALL_BASELINE_MS) / FALL_RAMP_MS;
     s1Pitch = easeCubic(t) * FALL_PEAK_PITCH;
   } else {
-    // tiny jitter < STILLNESS_SPREAD_DEG (4°) so detector sees stillness
     s1Pitch = FALL_PEAK_PITCH + jitter(0.6);
   }
   return {
@@ -157,116 +188,107 @@ function makeFallFrame(elapsedMs: number): SensorFrame {
   };
 }
 
+export interface UseDemoWorkerResult {
+  frame: SensorFrame | null;
+  isAnimating: boolean;
+  isFalling: boolean;
+  triggerLift: (kind: DemoLiftKind) => void;
+  triggerFall: () => void;
+}
+
 export function useDemoWorker(
   active: boolean,
   injectLift: (analysis: LiftAnalysis) => void,
 ): UseDemoWorkerResult {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [completed, setCompleted] = useState(false);
   const [frame, setFrame] = useState<SensorFrame | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isFalling, setIsFalling] = useState(false);
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const animRunIdRef = useRef(0);
+  const liftCounterRef = useRef(0);
   const injectRef = useRef(injectLift);
-  const runIdRef = useRef(0);
-
   useEffect(() => {
     injectRef.current = injectLift;
   }, [injectLift]);
 
-  const stopFrames = useCallback(() => {
+  const stopAnimation = useCallback(() => {
     if (frameIntervalRef.current) {
       clearInterval(frameIntervalRef.current);
       frameIntervalRef.current = null;
     }
   }, []);
 
-  const stop = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    stopFrames();
-  }, [stopFrames]);
+  const triggerLift = useCallback(
+    (kind: DemoLiftKind) => {
+      if (!active) return;
 
-  const animateLift = useCallback(
-    (script: ScriptedLift) => {
-      stopFrames();
+      stopAnimation();
+      animRunIdRef.current += 1;
+      const thisRun = animRunIdRef.current;
+
+      const script = SCRIPT_BY_KIND[kind];
+      const liftNumber = ++liftCounterRef.current;
+
+      setIsAnimating(true);
+      setIsFalling(false);
+
+      injectRef.current(buildAnalysis(liftNumber, script));
+
       const startMs = Date.now();
-      const durationMs = script.durationMs;
       frameIntervalRef.current = setInterval(() => {
+        if (thisRun !== animRunIdRef.current) return;
         const elapsed = Date.now() - startMs;
-        const t = Math.min(elapsed / durationMs, 1);
+        const t = Math.min(elapsed / script.durationMs, 1);
         setFrame(makeFrame(t, script));
-        if (t >= 1) stopFrames();
+        if (t >= 1) {
+          stopAnimation();
+          setFrame(neutralFrame());
+          setIsAnimating(false);
+        }
       }, 1000 / FRAME_HZ);
     },
-    [stopFrames],
+    [active, stopAnimation],
   );
-
-  const run = useCallback(() => {
-    stop();
-    runIdRef.current += 1;
-    const thisRun = runIdRef.current;
-    setIsPlaying(true);
-    setCompleted(false);
-    setFrame(makeFrame(0, SCRIPT[0]));
-
-    const fire = (i: number) => {
-      if (thisRun !== runIdRef.current) return;
-      if (i >= TOTAL_LIFTS) {
-        setIsPlaying(false);
-        setCompleted(true);
-        setFrame(makeFrame(0, SCRIPT[0]));
-        return;
-      }
-      injectRef.current(buildAnalysis(i, SCRIPT[i]));
-      animateLift(SCRIPT[i]);
-      timerRef.current = setTimeout(() => fire(i + 1), LIFT_INTERVAL_MS);
-    };
-
-    timerRef.current = setTimeout(() => fire(0), 400);
-  }, [stop, animateLift]);
-
-  useEffect(() => {
-    if (active) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: sync demo player to `active` prop
-      run();
-    } else {
-      stop();
-      runIdRef.current += 1;
-      setIsPlaying(false);
-      setCompleted(false);
-      setFrame(null);
-    }
-    return stop;
-  }, [active, run, stop]);
-
-  const replay = useCallback(() => {
-    if (!active) return;
-    run();
-  }, [active, run]);
 
   const triggerFall = useCallback(() => {
     if (!active) return;
-    stop();
-    runIdRef.current += 1;
-    const thisRun = runIdRef.current;
-    setIsPlaying(true);
-    setCompleted(false);
+
+    stopAnimation();
+    animRunIdRef.current += 1;
+    const thisRun = animRunIdRef.current;
+
+    setIsAnimating(true);
+    setIsFalling(true);
     const startMs = Date.now();
     const totalMs = FALL_BASELINE_MS + FALL_RAMP_MS + FALL_HOLD_MS;
+
     frameIntervalRef.current = setInterval(() => {
-      if (thisRun !== runIdRef.current) return;
+      if (thisRun !== animRunIdRef.current) return;
       const elapsed = Date.now() - startMs;
       setFrame(makeFallFrame(elapsed));
       if (elapsed >= totalMs) {
-        stopFrames();
-        setIsPlaying(false);
-        setCompleted(true);
+        stopAnimation();
+        setIsAnimating(false);
+        setIsFalling(false);
+        setFrame(neutralFrame());
       }
     }, 1000 / FRAME_HZ);
-  }, [active, stop, stopFrames]);
+  }, [active, stopAnimation]);
 
-  return { isPlaying, completed, frame, replay, triggerFall };
+  useEffect(() => {
+    if (!active) {
+      stopAnimation();
+      animRunIdRef.current += 1;
+      liftCounterRef.current = 0;
+      setFrame(null);
+      setIsAnimating(false);
+      setIsFalling(false);
+    } else {
+      setFrame(neutralFrame());
+    }
+    return stopAnimation;
+  }, [active, stopAnimation]);
+
+  return { frame, isAnimating, isFalling, triggerLift, triggerFall };
 }
