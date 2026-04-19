@@ -175,7 +175,7 @@ export default function WorkerPage() {
           className="font-display text-base font-semibold tracking-tight text-foreground"
           style={{ letterSpacing: "-0.01em" }}
         >
-          liftlogic
+          KINEMATECH
         </span>
         <div className="flex flex-none items-center gap-1.5">
           <ModeSwitcher active="worksite" />

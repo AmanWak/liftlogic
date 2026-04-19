@@ -137,7 +137,7 @@ export default function ResearchPage() {
             className="font-display text-base font-semibold tracking-tight text-foreground"
             style={{ letterSpacing: "-0.01em" }}
           >
-            liftlogic
+            KINEMATECH
           </span>
           <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted">
             / research
