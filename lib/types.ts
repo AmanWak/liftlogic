@@ -20,6 +20,7 @@ export interface RepWindow {
   frames: SensorFrame[];
   baseline: {
     s2Pitch: number;
+    s5Roll: number;
   };
 }
 
@@ -29,7 +30,7 @@ export type FormError =
   | "knee_valgus"
   | "hip_shift"
   | "insufficient_depth"
-  | "bar_path_deviation";
+  | "torso_twist";
 
 export interface FormAnalysis {
   repNumber: number;
@@ -38,7 +39,7 @@ export interface FormAnalysis {
   lumbarFlexionDelta: number;
   kneeValgusAsymmetry: number;
   hipShiftMax: number;
-  barPathDeviation?: number;
+  torsoTwistMax: number;
   errorsDetected: FormError[];
   durationMs: number;
 }
@@ -55,5 +56,11 @@ export const FORM_ERROR_LABEL: Record<FormError, string> = {
   knee_valgus: "Knees caving",
   hip_shift: "Hip shift",
   insufficient_depth: "Shallow depth",
-  bar_path_deviation: "Bar drift",
+  torso_twist: "Torso twist",
 };
+
+export type SensorId = "s1" | "s2" | "s3" | "s4" | "s5";
+
+export type SensorHealthStatus = "online" | "warming" | "offline";
+
+export type SensorHealthMap = Record<SensorId, SensorHealthStatus>;

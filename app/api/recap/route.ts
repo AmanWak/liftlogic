@@ -24,7 +24,7 @@ const formErrorSchema = z.enum([
   "knee_valgus",
   "hip_shift",
   "insufficient_depth",
-  "bar_path_deviation",
+  "torso_twist",
 ]);
 
 const repSchema = z.object({

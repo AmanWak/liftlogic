@@ -79,9 +79,13 @@ export default function WorkerPage() {
     [voice],
   );
 
-  const { frame, lifts, status, liftCount, reset, injectLift, setStatus } = useWorkerStream(
+  const { frame, rawFrame, lifts, status, liftCount, health, reset, injectLift, setStatus } = useWorkerStream(
     ready && !settings.demoMode && settings.streamEnabled ? url : null,
-    { onCoaching: handleCoaching, skipCoach: settings.demoMode },
+    {
+      onCoaching: handleCoaching,
+      skipCoach: settings.demoMode,
+      calibration: settings.sensorCalibration,
+    },
   );
 
   const demo = useDemoWorker(settings.demoMode && sessionStart !== null, injectLift);
@@ -346,6 +350,9 @@ export default function WorkerPage() {
         open={settingsOpen}
         currentUrl={url}
         settings={settings}
+        activeFrame={frame}
+        rawFrame={rawFrame}
+        sensorHealth={status === "live" || status === "mock" ? health : undefined}
         onSettingsChange={updateSettings}
         onClose={() => setSettingsOpen(false)}
         onSave={handleSave}

@@ -1,8 +1,16 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { SensorFrame, FormAnalysis } from "./types";
+import type { SensorFrame, FormAnalysis, SensorHealthMap } from "./types";
 import { createRepDetector, type RepDetector } from "./repDetector";
 import { analyzeRep } from "./formAnalyzer";
+import {
+  applyCalibration,
+  createSmoothState,
+  resetSmoothState,
+  DEFAULT_CALIBRATION,
+  type SensorCalibration,
+} from "./sensorCalibration";
+import { createHealthTracker, type HealthTracker } from "./sensorHealth";
 
 const SHALLOW_REP_COACHING = "Not deep enough — try again.";
 
@@ -15,7 +23,7 @@ function clientFallback(analysis: FormAnalysis): string {
     knee_valgus:            "Knees caving — drive them out next rep.",
     hip_shift:              "Hips shifting — stay centered through the rep.",
     insufficient_depth:     SHALLOW_REP_COACHING,
-    bar_path_deviation:     "Bar drifting — keep it over mid-foot.",
+    torso_twist:            "Torso twisting — keep chest square.",
   };
   return cues[error];
 }
@@ -31,10 +39,12 @@ export interface RepResult {
 
 export interface UseSensorStreamResult {
   frame: SensorFrame | null;
+  rawFrame: SensorFrame | null;
   reps: RepResult[];
   status: ConnStatus;
   repCount: number;
   cleanReps: number;
+  health: SensorHealthMap;
   reset: () => void;
   injectRep: (analysis: FormAnalysis) => void;
   setStatus: (status: ConnStatus) => void;
@@ -61,10 +71,16 @@ function parseFrame(raw: unknown): SensorFrame | null {
   return f as unknown as SensorFrame;
 }
 
+const WARMING_HEALTH: SensorHealthMap = {
+  s1: "warming", s2: "warming", s3: "warming", s4: "warming", s5: "warming",
+};
+
 export interface UseSensorStreamOptions {
   onCoaching?: (text: string) => void;
   /** Skip Gemini and use instant fallback cues (demo mode) */
   skipGemini?: boolean;
+  /** Calibration + smoothing config. Read live via ref so toggling doesn't reset stream. */
+  calibration?: SensorCalibration;
 }
 
 export function useSensorStream(
@@ -72,15 +88,21 @@ export function useSensorStream(
   options: UseSensorStreamOptions = {},
 ): UseSensorStreamResult {
   const [frame, setFrame] = useState<SensorFrame | null>(null);
+  const [rawFrame, setRawFrame] = useState<SensorFrame | null>(null);
   const [reps, setReps] = useState<RepResult[]>([]);
   const [status, setStatus] = useState<ConnStatus>("idle");
+  const [health, setHealth] = useState<SensorHealthMap>(WARMING_HEALTH);
   const detectorRef = useRef<RepDetector>(createRepDetector());
+  const smoothRef = useRef(createSmoothState());
+  const healthRef = useRef<HealthTracker>(createHealthTracker());
+  const calibrationRef = useRef<SensorCalibration>(options.calibration ?? DEFAULT_CALIBRATION);
   const onCoachingRef = useRef(options.onCoaching);
   const skipGeminiRef = useRef(options.skipGemini ?? false);
   useEffect(() => {
     onCoachingRef.current = options.onCoaching;
     skipGeminiRef.current = options.skipGemini ?? false;
-  }, [options.onCoaching, options.skipGemini]);
+    if (options.calibration) calibrationRef.current = options.calibration;
+  }, [options.onCoaching, options.skipGemini, options.calibration]);
 
   const updateRep = useCallback(
     (repNumber: number, patch: Partial<RepResult>) => {
@@ -131,6 +153,7 @@ export function useSensorStream(
     let cancelled = false;
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let thighsOnlinePrev = false;
 
     const connect = () => {
       if (cancelled) return;
@@ -164,12 +187,25 @@ export function useSensorStream(
         } catch {
           return;
         }
-        const f = parseFrame(raw);
-        if (!f) return;
-        setFrame(f);
-        const completed = detectorRef.current.onFrame(f);
+        const rawFrame = parseFrame(raw);
+        if (!rawFrame) return;
+        const calibrated = applyCalibration(rawFrame, calibrationRef.current, smoothRef.current);
+        const nextHealth = healthRef.current.update(rawFrame);
+        setFrame(calibrated);
+        setRawFrame(rawFrame);
+        setHealth(nextHealth);
+
+        const thighsOnline = nextHealth.s3 === "online" && nextHealth.s4 === "online";
+        if (!thighsOnline) {
+          if (thighsOnlinePrev) detectorRef.current.reset();
+          thighsOnlinePrev = false;
+          return;
+        }
+        thighsOnlinePrev = true;
+
+        const completed = detectorRef.current.onFrame(calibrated);
         if (completed) {
-          const analysis = analyzeRep(completed);
+          const analysis = analyzeRep(completed, nextHealth);
           if (analysis.errorsDetected.includes("insufficient_depth") || skipGeminiRef.current) {
             const coaching = analysis.errorsDetected.includes("insufficient_depth")
               ? SHALLOW_REP_COACHING
@@ -195,7 +231,10 @@ export function useSensorStream(
 
   const reset = useCallback(() => {
     detectorRef.current.reset();
+    resetSmoothState(smoothRef.current);
+    healthRef.current.reset();
     setReps([]);
+    setHealth(WARMING_HEALTH);
   }, []);
 
   const injectRep = useCallback(
@@ -217,5 +256,5 @@ export function useSensorStream(
   const repCount = reps.length;
   const cleanReps = reps.filter((r) => r.analysis.errorsDetected.length === 0).length;
 
-  return { frame, reps, status, repCount, cleanReps, reset, injectRep, setStatus };
+  return { frame, rawFrame, reps, status, repCount, cleanReps, health, reset, injectRep, setStatus };
 }

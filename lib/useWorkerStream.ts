@@ -1,9 +1,17 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { SensorFrame } from "./types";
+import type { SensorFrame, SensorHealthMap } from "./types";
 import type { LiftAnalysis } from "./types-worker";
 import { createLiftDetector, type LiftDetector } from "./liftDetector";
 import { analyzeLift } from "./liftAnalyzer";
+import {
+  applyCalibration,
+  createSmoothState,
+  resetSmoothState,
+  DEFAULT_CALIBRATION,
+  type SensorCalibration,
+} from "./sensorCalibration";
+import { createHealthTracker, type HealthTracker } from "./sensorHealth";
 
 function clientFallback(analysis: LiftAnalysis): string {
   const error = analysis.errorsDetected[0];
@@ -28,10 +36,12 @@ export interface LiftResult {
 
 export interface UseWorkerStreamResult {
   frame: SensorFrame | null;
+  rawFrame: SensorFrame | null;
   lifts: LiftResult[];
   status: ConnStatus;
   liftCount: number;
   safeLifts: number;
+  health: SensorHealthMap;
   reset: () => void;
   injectLift: (analysis: LiftAnalysis) => void;
   setStatus: (status: ConnStatus) => void;
@@ -58,10 +68,16 @@ function parseFrame(raw: unknown): SensorFrame | null {
   return f as unknown as SensorFrame;
 }
 
+const WARMING_HEALTH: SensorHealthMap = {
+  s1: "warming", s2: "warming", s3: "warming", s4: "warming", s5: "warming",
+};
+
 export interface UseWorkerStreamOptions {
   onCoaching?: (text: string) => void;
   /** Skip Purdue and use instant fallback cues (demo mode) */
   skipCoach?: boolean;
+  /** Calibration + smoothing config. Read live via ref so toggling doesn't reset stream. */
+  calibration?: SensorCalibration;
 }
 
 export function useWorkerStream(
@@ -69,15 +85,21 @@ export function useWorkerStream(
   options: UseWorkerStreamOptions = {},
 ): UseWorkerStreamResult {
   const [frame, setFrame] = useState<SensorFrame | null>(null);
+  const [rawFrame, setRawFrame] = useState<SensorFrame | null>(null);
   const [lifts, setLifts] = useState<LiftResult[]>([]);
   const [status, setStatus] = useState<ConnStatus>("idle");
+  const [health, setHealth] = useState<SensorHealthMap>(WARMING_HEALTH);
   const detectorRef = useRef<LiftDetector>(createLiftDetector());
+  const smoothRef = useRef(createSmoothState());
+  const healthRef = useRef<HealthTracker>(createHealthTracker());
+  const calibrationRef = useRef<SensorCalibration>(options.calibration ?? DEFAULT_CALIBRATION);
   const onCoachingRef = useRef(options.onCoaching);
   const skipCoachRef = useRef(options.skipCoach ?? false);
   useEffect(() => {
     onCoachingRef.current = options.onCoaching;
     skipCoachRef.current = options.skipCoach ?? false;
-  }, [options.onCoaching, options.skipCoach]);
+    if (options.calibration) calibrationRef.current = options.calibration;
+  }, [options.onCoaching, options.skipCoach, options.calibration]);
 
   const updateLift = useCallback(
     (liftNumber: number, patch: Partial<LiftResult>) => {
@@ -128,6 +150,7 @@ export function useWorkerStream(
     let cancelled = false;
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let torsoOnlinePrev = false;
 
     const connect = () => {
       if (cancelled) return;
@@ -161,10 +184,23 @@ export function useWorkerStream(
         } catch {
           return;
         }
-        const f = parseFrame(raw);
-        if (!f) return;
-        setFrame(f);
-        const completed = detectorRef.current.onFrame(f);
+        const rawFrame = parseFrame(raw);
+        if (!rawFrame) return;
+        const calibrated = applyCalibration(rawFrame, calibrationRef.current, smoothRef.current);
+        const nextHealth = healthRef.current.update(rawFrame);
+        setFrame(calibrated);
+        setRawFrame(rawFrame);
+        setHealth(nextHealth);
+
+        const torsoOnline = nextHealth.s1 === "online" && nextHealth.s2 === "online";
+        if (!torsoOnline) {
+          if (torsoOnlinePrev) detectorRef.current.reset();
+          torsoOnlinePrev = false;
+          return;
+        }
+        torsoOnlinePrev = true;
+
+        const completed = detectorRef.current.onFrame(calibrated);
         if (completed) {
           const analysis = analyzeLift(completed);
           if (skipCoachRef.current) {
@@ -190,7 +226,10 @@ export function useWorkerStream(
 
   const reset = useCallback(() => {
     detectorRef.current.reset();
+    resetSmoothState(smoothRef.current);
+    healthRef.current.reset();
     setLifts([]);
+    setHealth(WARMING_HEALTH);
   }, []);
 
   const injectLift = useCallback(
@@ -210,5 +249,5 @@ export function useWorkerStream(
   const liftCount = lifts.length;
   const safeLifts = lifts.filter((r) => r.analysis.errorsDetected.length === 0).length;
 
-  return { frame, lifts, status, liftCount, safeLifts, reset, injectLift, setStatus };
+  return { frame, rawFrame, lifts, status, liftCount, safeLifts, health, reset, injectLift, setStatus };
 }

@@ -12,7 +12,7 @@ const ERROR_SEVERITY: Record<FormError, "danger" | "warn"> = {
   knee_valgus: "danger",
   hip_shift: "warn",
   insufficient_depth: "warn",
-  bar_path_deviation: "warn",
+  torso_twist: "warn",
 };
 
 export function RepCard({ rep, displayNumber }: { rep: RepResult; displayNumber: number | null }) {
@@ -111,9 +111,7 @@ export function RepCard({ rep, displayNumber }: { rep: RepResult; displayNumber:
             <Metric k="LUMBAR Δ" v={`${analysis.lumbarFlexionDelta}°`} />
             <Metric k="VALGUS"   v={`${analysis.kneeValgusAsymmetry}°`} />
             <Metric k="HIP SHIFT" v={`${analysis.hipShiftMax}°`} />
-            {analysis.barPathDeviation !== undefined && (
-              <Metric k="BAR" v={`${analysis.barPathDeviation}°`} />
-            )}
+            <Metric k="TWIST"    v={`${analysis.torsoTwistMax}°`} />
           </motion.div>
         )}
       </div>

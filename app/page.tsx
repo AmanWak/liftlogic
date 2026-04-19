@@ -79,9 +79,13 @@ export default function Home() {
     [voice],
   );
 
-  const { frame, reps, status, repCount, reset, injectRep, setStatus } = useSensorStream(
+  const { frame, rawFrame, reps, status, repCount, health, reset, injectRep, setStatus } = useSensorStream(
     ready && !settings.demoMode && settings.streamEnabled ? url : null,
-    { onCoaching: handleCoaching, skipGemini: settings.demoMode },
+    {
+      onCoaching: handleCoaching,
+      skipGemini: settings.demoMode,
+      calibration: settings.sensorCalibration,
+    },
   );
 
   const demo = useDemoMode(settings.demoMode, injectRep);
@@ -249,6 +253,10 @@ export default function Home() {
       </header>
 
       <div className="space-y-3">
+        {!settings.demoMode && settings.streamEnabled && (status === "live" || status === "mock") && (
+          <SensorOfflineBanner health={health} />
+        )}
+
         <StatusBand
           repCount={effectiveRepCount}
           cleanReps={effectiveCleanReps}
@@ -331,6 +339,9 @@ export default function Home() {
         currentUrl={url}
         settings={settings}
         showWorkoutRepTarget
+        activeFrame={frame}
+        rawFrame={rawFrame}
+        sensorHealth={status === "live" || status === "mock" ? health : undefined}
         onSettingsChange={updateSettings}
         onClose={() => setSettingsOpen(false)}
         onSave={handleSave}
@@ -347,5 +358,29 @@ export default function Home() {
         onNewSet={handleReset}
       />
     </main>
+  );
+}
+
+const SENSOR_LABELS: Record<string, string> = {
+  s1: "chest",
+  s2: "lumbar",
+  s3: "left thigh",
+  s4: "right thigh",
+  s5: "mid-back",
+};
+
+function SensorOfflineBanner({ health }: { health: import("@/lib/types").SensorHealthMap }) {
+  const thighsDown = health.s3 === "offline" || health.s4 === "offline";
+  const offline = (["s1", "s2", "s3", "s4", "s5"] as const).filter((id) => health[id] === "offline");
+  if (offline.length === 0) return null;
+
+  const names = offline.map((id) => SENSOR_LABELS[id]).join(", ");
+  const message = thighsDown
+    ? `${names} offline — rep detection paused. Check the IMU.`
+    : `${names} offline — some form checks skipped.`;
+  return (
+    <div className="border border-danger/50 bg-danger/10 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-danger">
+      {message}
+    </div>
   );
 }

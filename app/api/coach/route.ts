@@ -34,7 +34,7 @@ const formErrorSchema = z.enum([
   "knee_valgus",
   "hip_shift",
   "insufficient_depth",
-  "bar_path_deviation",
+  "torso_twist",
 ]);
 
 const analysisSchema = z.object({
@@ -44,7 +44,7 @@ const analysisSchema = z.object({
   lumbarFlexionDelta: z.number().min(0).max(180),
   kneeValgusAsymmetry: z.number().min(0).max(180),
   hipShiftMax: z.number().min(0).max(180),
-  barPathDeviation: z.number().min(0).max(180).optional(),
+  torsoTwistMax: z.number().min(0).max(180),
   errorsDetected: z.array(formErrorSchema).max(6),
   durationMs: z.number().min(0).max(60_000),
 });

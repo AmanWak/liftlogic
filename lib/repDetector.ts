@@ -14,6 +14,7 @@ export function createRepDetector(): RepDetector {
   let frames: SensorFrame[] = [];
   let repNumber = 0;
   let baselineS2Pitch = 0;
+  let baselineS5Roll = 0;
   let startT = 0;
   let bottomT = 0;
   let bottomPitch = 0;
@@ -32,6 +33,7 @@ export function createRepDetector(): RepDetector {
 
       if (state === "idle") {
         baselineS2Pitch = frame.s2.pitch;
+        baselineS5Roll = frame.s5?.roll ?? 0;
         if (avgThighPitch < THRESHOLDS.DESCENT_PITCH) {
           state = "descending";
           frames = [frame];
@@ -63,7 +65,7 @@ export function createRepDetector(): RepDetector {
             endT: frame.t,
             bottomT,
             frames: [...frames],
-            baseline: { s2Pitch: baselineS2Pitch },
+            baseline: { s2Pitch: baselineS2Pitch, s5Roll: baselineS5Roll },
           };
           state = "idle";
           frames = [];

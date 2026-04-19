@@ -21,32 +21,32 @@ interface ScriptedRep {
 const SCRIPT_BY_KIND: Record<DemoErrorKind, ScriptedRep> = {
   clean: {
     errors: [],
-    base: { depthDegrees: -3, maxForwardLean: 32, lumbarFlexionDelta: 7, kneeValgusAsymmetry: 4, hipShiftMax: 3 },
+    base: { depthDegrees: -3, maxForwardLean: 32, lumbarFlexionDelta: 7, kneeValgusAsymmetry: 4, hipShiftMax: 3, torsoTwistMax: 2 },
     durationMs: 2800,
   },
   knee_valgus: {
     errors: ["knee_valgus"],
-    base: { depthDegrees: -1, maxForwardLean: 35, lumbarFlexionDelta: 8, kneeValgusAsymmetry: 16, hipShiftMax: 4 },
+    base: { depthDegrees: -1, maxForwardLean: 35, lumbarFlexionDelta: 8, kneeValgusAsymmetry: 16, hipShiftMax: 4, torsoTwistMax: 2 },
     durationMs: 2600,
   },
   insufficient_depth: {
     errors: ["insufficient_depth"],
-    base: { depthDegrees: 14, maxForwardLean: 34, lumbarFlexionDelta: 6, kneeValgusAsymmetry: 4, hipShiftMax: 3 },
+    base: { depthDegrees: 14, maxForwardLean: 34, lumbarFlexionDelta: 6, kneeValgusAsymmetry: 4, hipShiftMax: 3, torsoTwistMax: 2 },
     durationMs: 2100,
   },
   excessive_forward_lean: {
     errors: ["excessive_forward_lean"],
-    base: { depthDegrees: -2, maxForwardLean: 52, lumbarFlexionDelta: 9, kneeValgusAsymmetry: 5, hipShiftMax: 3 },
+    base: { depthDegrees: -2, maxForwardLean: 52, lumbarFlexionDelta: 9, kneeValgusAsymmetry: 5, hipShiftMax: 3, torsoTwistMax: 2 },
     durationMs: 2700,
   },
   hip_shift: {
     errors: ["hip_shift"],
-    base: { depthDegrees: -2, maxForwardLean: 36, lumbarFlexionDelta: 7, kneeValgusAsymmetry: 6, hipShiftMax: 12 },
+    base: { depthDegrees: -2, maxForwardLean: 36, lumbarFlexionDelta: 7, kneeValgusAsymmetry: 6, hipShiftMax: 12, torsoTwistMax: 2 },
     durationMs: 2550,
   },
   lumbar_flexion: {
     errors: ["lumbar_flexion"],
-    base: { depthDegrees: -2, maxForwardLean: 38, lumbarFlexionDelta: 22, kneeValgusAsymmetry: 4, hipShiftMax: 3 },
+    base: { depthDegrees: -2, maxForwardLean: 38, lumbarFlexionDelta: 22, kneeValgusAsymmetry: 4, hipShiftMax: 3, torsoTwistMax: 2 },
     durationMs: 2700,
   },
 };
@@ -100,6 +100,7 @@ function buildAnalysis(repNumber: number, script: ScriptedRep): FormAnalysis {
     lumbarFlexionDelta: round(Math.max(0, base.lumbarFlexionDelta + jitter(2))),
     kneeValgusAsymmetry: round(Math.max(0, base.kneeValgusAsymmetry + jitter(2))),
     hipShiftMax: round(Math.max(0, base.hipShiftMax + jitter(2))),
+    torsoTwistMax: round(Math.max(0, base.torsoTwistMax + jitter(1))),
     errorsDetected: errors,
     durationMs: Math.round(durationMs + jitter(150)),
   };

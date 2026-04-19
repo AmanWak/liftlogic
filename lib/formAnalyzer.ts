@@ -1,9 +1,14 @@
-import type { RepWindow, FormAnalysis, FormError } from "./types";
+import type { RepWindow, FormAnalysis, FormError, SensorHealthMap } from "./types";
 import { THRESHOLDS } from "./config";
 
 const round = (n: number) => Math.round(n * 10) / 10;
 
-export function analyzeRep(rep: RepWindow): FormAnalysis {
+function online(health: SensorHealthMap | undefined, ...ids: Array<keyof SensorHealthMap>): boolean {
+  if (!health) return true;
+  return ids.every((id) => health[id] === "online");
+}
+
+export function analyzeRep(rep: RepWindow, health?: SensorHealthMap): FormAnalysis {
   const { frames, baseline } = rep;
 
   let maxForwardLean = 0;
@@ -11,8 +16,7 @@ export function analyzeRep(rep: RepWindow): FormAnalysis {
   let maxKneeValgus = 0;
   let maxHipShift = 0;
   let depthDegrees = Infinity;
-  let maxBarPath = 0;
-  let hasBar = false;
+  let maxTorsoTwist = 0;
 
   for (const f of frames) {
     const lean = Math.abs(f.s1.pitch - f.s2.pitch);
@@ -31,19 +35,18 @@ export function analyzeRep(rep: RepWindow): FormAnalysis {
     if (minThigh < depthDegrees) depthDegrees = minThigh;
 
     if (f.s5) {
-      hasBar = true;
-      const barDev = Math.abs(f.s5.roll);
-      if (barDev > maxBarPath) maxBarPath = barDev;
+      const twist = Math.abs(f.s5.roll - baseline.s5Roll);
+      if (twist > maxTorsoTwist) maxTorsoTwist = twist;
     }
   }
 
   const errors: FormError[] = [];
-  if (maxForwardLean > THRESHOLDS.FORWARD_LEAN) errors.push("excessive_forward_lean");
-  if (maxLumbarDelta > THRESHOLDS.LUMBAR_FLEXION) errors.push("lumbar_flexion");
-  if (maxKneeValgus > THRESHOLDS.KNEE_VALGUS) errors.push("knee_valgus");
-  if (maxHipShift > THRESHOLDS.HIP_SHIFT) errors.push("hip_shift");
-  if (depthDegrees > THRESHOLDS.DEPTH_PARALLEL) errors.push("insufficient_depth");
-  if (hasBar && maxBarPath > THRESHOLDS.BAR_PATH) errors.push("bar_path_deviation");
+  if (online(health, "s1", "s2") && maxForwardLean > THRESHOLDS.FORWARD_LEAN) errors.push("excessive_forward_lean");
+  if (online(health, "s2") && maxLumbarDelta > THRESHOLDS.LUMBAR_FLEXION) errors.push("lumbar_flexion");
+  if (online(health, "s3", "s4") && maxKneeValgus > THRESHOLDS.KNEE_VALGUS) errors.push("knee_valgus");
+  if (online(health, "s3", "s4") && maxHipShift > THRESHOLDS.HIP_SHIFT) errors.push("hip_shift");
+  if (online(health, "s3", "s4") && depthDegrees > THRESHOLDS.DEPTH_PARALLEL) errors.push("insufficient_depth");
+  if (online(health, "s5") && maxTorsoTwist > THRESHOLDS.TORSO_TWIST) errors.push("torso_twist");
 
   return {
     repNumber: rep.repNumber,
@@ -52,7 +55,7 @@ export function analyzeRep(rep: RepWindow): FormAnalysis {
     lumbarFlexionDelta: round(maxLumbarDelta),
     kneeValgusAsymmetry: round(maxKneeValgus),
     hipShiftMax: round(maxHipShift),
-    barPathDeviation: hasBar ? round(maxBarPath) : undefined,
+    torsoTwistMax: round(maxTorsoTwist),
     errorsDetected: errors,
     durationMs: rep.endT - rep.startT,
   };

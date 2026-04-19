@@ -3,16 +3,42 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { Settings } from "@/lib/useSettings";
+import type { SensorFrame, SensorId, SensorHealthMap, SensorHealthStatus } from "@/lib/types";
+import {
+  DEFAULT_CALIBRATION,
+  MAX_SMOOTHING_ALPHA,
+  cloneCalibration,
+  flippedReading,
+  type SensorCalibration,
+} from "@/lib/sensorCalibration";
 
 interface Props {
   open: boolean;
   currentUrl: string;
   settings: Settings;
   showWorkoutRepTarget?: boolean;
+  activeFrame?: SensorFrame | null;
+  rawFrame?: SensorFrame | null;
+  sensorHealth?: SensorHealthMap;
   onSettingsChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
   onSave: (url: string) => void;
   onReset: () => void;
+}
+
+const SENSORS: SensorId[] = ["s1", "s2", "s3", "s4", "s5"];
+const SENSOR_LABELS: Record<SensorId, string> = {
+  s1: "chest",
+  s2: "lumbar",
+  s3: "L thigh",
+  s4: "R thigh",
+  s5: "mid-back",
+};
+
+function healthDotClass(status: SensorHealthStatus | undefined): string {
+  if (status === "online") return "bg-accent";
+  if (status === "warming") return "bg-warn";
+  return "bg-danger";
 }
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -22,6 +48,178 @@ interface ToggleProps {
   hint: string;
   enabled: boolean;
   onChange: (next: boolean) => void;
+}
+
+interface CalibrationSectionProps {
+  activeFrame: SensorFrame | null;
+  rawFrame: SensorFrame | null;
+  health: SensorHealthMap | undefined;
+  calibration: SensorCalibration;
+  onChange: (next: SensorCalibration) => void;
+}
+
+function fmtDeg(v: number | undefined): string {
+  if (v === undefined || !Number.isFinite(v)) return "—";
+  return (v >= 0 ? "+" : "") + v.toFixed(1);
+}
+
+function CalibrationSection({
+  activeFrame,
+  rawFrame,
+  health,
+  calibration,
+  onChange,
+}: CalibrationSectionProps) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  const zero = () => {
+    if (!rawFrame) return;
+    const next = cloneCalibration(calibration);
+    for (const id of SENSORS) {
+      const reading = rawFrame[id];
+      if (!reading) continue;
+      if (health && health[id] !== "online") continue;
+      const flipped = flippedReading(reading, next.flips[id]);
+      next.offsets[id] = { roll: flipped.roll, pitch: flipped.pitch };
+    }
+    onChange(next);
+  };
+
+  const resetCalibration = () => {
+    onChange(cloneCalibration(DEFAULT_CALIBRATION));
+  };
+
+  const toggleFlip = (id: SensorId, axis: "roll" | "pitch") => {
+    const next = cloneCalibration(calibration);
+    next.flips[id] = {
+      ...next.flips[id],
+      [axis]: (next.flips[id][axis] === 1 ? -1 : 1) as 1 | -1,
+    };
+    onChange(next);
+  };
+
+  const setAlpha = (alpha: number) => {
+    const next = cloneCalibration(calibration);
+    next.smoothingAlpha = Math.min(Math.max(alpha, 0), MAX_SMOOTHING_ALPHA);
+    onChange(next);
+  };
+
+  const anyOffline = health && SENSORS.some((id) => health[id] === "offline");
+  const zeroDisabled = !rawFrame || !!anyOffline;
+
+  return (
+    <div className="mb-4">
+      <button
+        onClick={() => setCollapsed((c) => !c)}
+        className="flex w-full items-center justify-between"
+      >
+        <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
+          sensor calibration
+        </span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-strong">
+          {collapsed ? "expand" : "collapse"}
+        </span>
+      </button>
+
+      {!collapsed && (
+        <div className="mt-1.5 space-y-2 border border-border bg-surface-2 p-3">
+          <div className="grid grid-cols-[auto_1fr_1fr_auto_auto] items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-wider">
+            <span className="text-muted">sensor</span>
+            <span className="text-right text-muted">roll</span>
+            <span className="text-right text-muted">pitch</span>
+            <span className="text-center text-muted">flip r</span>
+            <span className="text-center text-muted">flip p</span>
+            {SENSORS.map((id) => {
+              const reading = activeFrame?.[id];
+              const status = health?.[id];
+              const flips = calibration.flips[id];
+              return (
+                <div key={id} className="contents">
+                  <div className="flex items-center gap-1.5 text-foreground">
+                    <span className={`h-1.5 w-1.5 rounded-full ${healthDotClass(status)}`} />
+                    <span>{SENSOR_LABELS[id]}</span>
+                  </div>
+                  <span className="num text-right text-foreground">
+                    {fmtDeg(reading?.roll)}
+                  </span>
+                  <span className="num text-right text-foreground">
+                    {fmtDeg(reading?.pitch)}
+                  </span>
+                  <button
+                    onClick={() => toggleFlip(id, "roll")}
+                    className={`border px-1.5 py-0.5 text-[9px] ${
+                      flips.roll === -1
+                        ? "border-accent text-accent"
+                        : "border-border text-muted-strong"
+                    }`}
+                  >
+                    {flips.roll === -1 ? "−1" : "+1"}
+                  </button>
+                  <button
+                    onClick={() => toggleFlip(id, "pitch")}
+                    className={`border px-1.5 py-0.5 text-[9px] ${
+                      flips.pitch === -1
+                        ? "border-accent text-accent"
+                        : "border-border text-muted-strong"
+                    }`}
+                  >
+                    {flips.pitch === -1 ? "−1" : "+1"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              disabled={zeroDisabled}
+              onClick={zero}
+              className="border border-accent/70 bg-accent/10 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface disabled:text-muted-strong"
+            >
+              zero upright pose
+            </button>
+            <button
+              onClick={resetCalibration}
+              className="border border-border bg-surface py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-strong hover:border-border-strong"
+            >
+              reset calibration
+            </button>
+          </div>
+
+          <div className="pt-1">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[9px] uppercase tracking-wider text-muted">
+                smoothing
+              </span>
+              <span className="num font-mono text-[10px] text-foreground">
+                {calibration.smoothingAlpha.toFixed(2)}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={MAX_SMOOTHING_ALPHA}
+              step={0.05}
+              value={calibration.smoothingAlpha}
+              onChange={(e) => setAlpha(parseFloat(e.target.value))}
+              className="w-full accent-accent"
+            />
+            <div className="flex justify-between font-mono text-[9px] uppercase tracking-wider text-muted-strong">
+              <span>0 raw</span>
+              <span>0.4 default</span>
+              <span>0.9 sticky</span>
+            </div>
+          </div>
+
+          {anyOffline && (
+            <div className="border border-danger/40 bg-danger/10 px-2 py-1.5 font-mono text-[9px] uppercase tracking-wider text-danger">
+              one or more sensors offline — zero disabled
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Toggle({ label, hint, enabled, onChange }: ToggleProps) {
@@ -70,6 +268,9 @@ export function SettingsSheet({
   currentUrl,
   settings,
   showWorkoutRepTarget = false,
+  activeFrame = null,
+  rawFrame = null,
+  sensorHealth,
   onSettingsChange,
   onClose,
   onSave,
@@ -183,6 +384,16 @@ export function SettingsSheet({
                 </div>
               </div>
 
+              {settings.streamEnabled && (
+                <CalibrationSection
+                  activeFrame={activeFrame}
+                  rawFrame={rawFrame}
+                  health={sensorHealth}
+                  calibration={settings.sensorCalibration}
+                  onChange={(next) => onSettingsChange({ sensorCalibration: next })}
+                />
+              )}
+
               <div className="mb-4">
                 <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
                   set gap · auto-summary
@@ -249,6 +460,9 @@ export function SettingsSheet({
                 <span className="text-muted-strong">tip</span> · mock at{" "}
                 <code className="text-foreground">ws://localhost:8181</code> · hardware at{" "}
                 <code className="text-foreground">ws://&lt;esp32&gt;:81</code>
+              </div>
+              <div className="mt-1 font-mono text-[10px] normal-case tracking-normal text-muted-strong">
+                esp32 on <span className="text-foreground">StarkHacks-2</span>. current ip is printed on the esp32 dashboard or serial monitor — e.g. <code className="text-foreground">ws://10.10.8.42:81</code>. ip may change on reboot.
               </div>
 
               <div className="mt-5 grid grid-cols-[1fr_1.4fr] gap-2">

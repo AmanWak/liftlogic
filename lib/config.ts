@@ -10,7 +10,7 @@ export const THRESHOLDS = {
   KNEE_VALGUS: 8,
   HIP_SHIFT: 8,
   DEPTH_PARALLEL: 0,
-  BAR_PATH: 5,
+  TORSO_TWIST: 8,
 } as const;
 
 // Research-backed "ideal" values. Not used as runtime thresholds — those live
