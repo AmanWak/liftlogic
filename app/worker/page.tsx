@@ -6,6 +6,7 @@ import { useSettings } from "@/lib/useSettings";
 import { useVoice } from "@/lib/useVoice";
 import { useDemoWorker } from "@/lib/useDemoWorker";
 import { useLiveErrors } from "@/lib/useLiveErrors";
+import { useFallDetector } from "@/lib/useFallDetector";
 import { useConsoleSignature } from "@/lib/useConsoleSignature";
 import { DEFAULT_MOCK_URL } from "@/lib/config";
 import { ConnectionPill } from "@/components/ConnectionPill";
@@ -15,6 +16,7 @@ import { LiftCard } from "@/components/LiftCard";
 import { SettingsSheet } from "@/components/SettingsSheet";
 import { SessionSummary } from "@/components/SessionSummary";
 import { ModeSwitcher } from "@/components/ModeSwitcher";
+import { FallAlertOverlay } from "@/components/FallAlertOverlay";
 import { WORKER_ERROR_LABEL } from "@/lib/types-worker";
 
 const STORAGE_KEY = "liftlogic:esp-url";
@@ -54,6 +56,7 @@ export default function WorkerPage() {
   const [frozenDurationMs, setFrozenDurationMs] = useState<number | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [streak, setStreak] = useState(0);
+  const [fallAlertOpen, setFallAlertOpen] = useState(false);
   const summaryFiredRef = useRef(false);
   const safetyScoreRef = useRef<number | null>(null);
   const shiftActive = sessionStart !== null;
@@ -102,6 +105,14 @@ export default function WorkerPage() {
   const activeFrame = settings.demoMode ? demo.frame : frame;
   const baselineS2Pitch = activeFrame?.s2.pitch ?? null;
   const { flashTrigger } = useLiveErrors(activeFrame, baselineS2Pitch);
+  const { fallTrigger } = useFallDetector(activeFrame, settings.fallDetectionEnabled);
+
+  useEffect(() => {
+    if (fallTrigger === 0) return;
+    voice.cancel();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: open alert modal in response to detector event
+    setFallAlertOpen(true);
+  }, [fallTrigger, voice]);
   const safeLifts = lifts.filter((r) => r.analysis.errorsDetected.length === 0).length;
   const safetyScore = computeSafetyScore(lifts);
   useEffect(() => { safetyScoreRef.current = safetyScore; }, [safetyScore]);
@@ -230,6 +241,14 @@ export default function WorkerPage() {
               </span>
             </div>
             <div className="flex items-center gap-3">
+              {shiftActive && settings.demoMode && (
+                <button
+                  onClick={demo.triggerFall}
+                  className="border border-danger/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-danger hover:bg-danger/10"
+                >
+                  simulate fall
+                </button>
+              )}
               {shiftActive && settings.demoMode && demo.completed && (
                 <button
                   onClick={demo.replay}
@@ -343,6 +362,8 @@ export default function WorkerPage() {
         headerLabel="shift recap · summary"
         newButtonLabel="new shift"
       />
+
+      <FallAlertOverlay open={fallAlertOpen} onDismiss={() => setFallAlertOpen(false)} />
     </main>
   );
 }

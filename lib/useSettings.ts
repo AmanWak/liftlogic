@@ -8,6 +8,7 @@ export interface Settings {
   streamEnabled: boolean;
   setGapSeconds: number;
   repsPerSetTarget: number;
+  fallDetectionEnabled: boolean;
 }
 
 const STORAGE_KEY = "liftlogic:settings";
@@ -18,6 +19,7 @@ const DEFAULTS: Settings = {
   streamEnabled: true,
   setGapSeconds: 20,
   repsPerSetTarget: 10,
+  fallDetectionEnabled: true,
 };
 
 function load(): Settings {
@@ -38,6 +40,10 @@ function load(): Settings {
         typeof parsed.repsPerSetTarget === "number" && parsed.repsPerSetTarget >= 1 && parsed.repsPerSetTarget <= 50
           ? parsed.repsPerSetTarget
           : DEFAULTS.repsPerSetTarget,
+      fallDetectionEnabled:
+        typeof parsed.fallDetectionEnabled === "boolean"
+          ? parsed.fallDetectionEnabled
+          : DEFAULTS.fallDetectionEnabled,
     };
   } catch {
     return DEFAULTS;

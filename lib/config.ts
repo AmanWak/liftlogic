@@ -59,6 +59,18 @@ export const IDEAL_LIFT = {
   LEG_LOAD_ASYMMETRY_IDEAL_DEG: 0,
 } as const;
 
+// Fall detection — pitch-only heuristic since MPU-6050 frames carry filtered
+// roll/pitch (no raw accel). Tuned for the demo's 30Hz stream and live 50Hz.
+export const FALL = {
+  IMPACT_DELTA_DEG: 60,     // |s1.pitch| must jump by at least this...
+  IMPACT_WINDOW_MS: 400,    // ...within this window (recent-past comparison)
+  HORIZONTAL_PITCH_DEG: 60, // post-impact |s1.pitch| must exceed this
+  STILLNESS_MS: 1200,       // confirm stillness for this long before firing
+  STILLNESS_SPREAD_DEG: 4,  // max-min pitch spread allowed during stillness
+  BUFFER_MS: 1600,          // ring buffer spans impact window + margin
+  LATCH_MS: 10_000,         // ignore further triggers for this long after a fire
+} as const;
+
 export const DEFAULT_MOCK_URL = "ws://localhost:8181";
 
 export const GEMINI_MODEL = "gemini-2.5-flash-lite";

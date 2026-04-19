@@ -154,6 +154,12 @@ export function SettingsSheet({
                     enabled={settings.premiumVoice}
                     onChange={(v) => onSettingsChange({ premiumVoice: v })}
                   />
+                  <Toggle
+                    label={settings.fallDetectionEnabled ? "fall detection · on" : "fall detection · off"}
+                    hint={settings.fallDetectionEnabled ? "alerts authorities · 10s cancel" : "worker mode · safety disabled"}
+                    enabled={settings.fallDetectionEnabled}
+                    onChange={(v) => onSettingsChange({ fallDetectionEnabled: v })}
+                  />
                 </div>
               </div>
 

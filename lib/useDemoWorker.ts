@@ -126,6 +126,35 @@ export interface UseDemoWorkerResult {
   completed: boolean;
   frame: SensorFrame | null;
   replay: () => void;
+  triggerFall: () => void;
+}
+
+// Synthetic fall profile: upright baseline → rapid pitch collapse → stillness.
+// Times chosen to naturally pass the pitch-only heuristic in useFallDetector —
+// the same code path will fire on real hardware when a worker hits the deck.
+const FALL_BASELINE_MS = 700;
+const FALL_RAMP_MS = 400;
+const FALL_HOLD_MS = 2200;
+const FALL_PEAK_PITCH = 85;
+
+function makeFallFrame(elapsedMs: number): SensorFrame {
+  let s1Pitch: number;
+  if (elapsedMs < FALL_BASELINE_MS) {
+    s1Pitch = 0;
+  } else if (elapsedMs < FALL_BASELINE_MS + FALL_RAMP_MS) {
+    const t = (elapsedMs - FALL_BASELINE_MS) / FALL_RAMP_MS;
+    s1Pitch = easeCubic(t) * FALL_PEAK_PITCH;
+  } else {
+    // tiny jitter < STILLNESS_SPREAD_DEG (4°) so detector sees stillness
+    s1Pitch = FALL_PEAK_PITCH + jitter(0.6);
+  }
+  return {
+    t: Date.now(),
+    s1: { roll: 0, pitch: s1Pitch },
+    s2: { roll: 0, pitch: s1Pitch * 0.9 },
+    s3: { roll: 0, pitch: s1Pitch * 0.4 },
+    s4: { roll: 0, pitch: s1Pitch * 0.4 },
+  };
 }
 
 export function useDemoWorker(
@@ -218,5 +247,26 @@ export function useDemoWorker(
     run();
   }, [active, run]);
 
-  return { isPlaying, completed, frame, replay };
+  const triggerFall = useCallback(() => {
+    if (!active) return;
+    stop();
+    runIdRef.current += 1;
+    const thisRun = runIdRef.current;
+    setIsPlaying(true);
+    setCompleted(false);
+    const startMs = Date.now();
+    const totalMs = FALL_BASELINE_MS + FALL_RAMP_MS + FALL_HOLD_MS;
+    frameIntervalRef.current = setInterval(() => {
+      if (thisRun !== runIdRef.current) return;
+      const elapsed = Date.now() - startMs;
+      setFrame(makeFallFrame(elapsed));
+      if (elapsed >= totalMs) {
+        stopFrames();
+        setIsPlaying(false);
+        setCompleted(true);
+      }
+    }, 1000 / FRAME_HZ);
+  }, [active, stop, stopFrames]);
+
+  return { isPlaying, completed, frame, replay, triggerFall };
 }
