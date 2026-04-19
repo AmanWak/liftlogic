@@ -169,7 +169,7 @@ export default function Home() {
           className="font-display text-base font-semibold tracking-tight text-foreground"
           style={{ letterSpacing: "-0.01em" }}
         >
-          LIFT LOGIC
+          KINEMATECH
         </span>
         <div className="flex flex-none items-center gap-1.5">
           <ModeSwitcher active="workout" />
