@@ -8,6 +8,7 @@ interface Props {
   frame: SensorFrame | null;
   baselineS2Pitch: number | null;
   flashTrigger?: number;
+  fallActive?: boolean;
 }
 
 function clamp(n: number, min: number, max: number) {
@@ -132,7 +133,7 @@ function solveFrontal(
   };
 }
 
-export function SensorSilhouette({ frame, baselineS2Pitch, flashTrigger = 0 }: Props) {
+export function SensorSilhouette({ frame, baselineS2Pitch, flashTrigger = 0, fallActive = false }: Props) {
   const flashControls = useAnimation();
   useEffect(() => {
     if (flashTrigger === 0) return;
@@ -298,33 +299,40 @@ export function SensorSilhouette({ frame, baselineS2Pitch, flashTrigger = 0 }: P
             strokeDasharray="2 6"
           />
 
-          {/* Foot bracket */}
-          <Bone x1={SIDE_FOOT_X - 5} y1={FOOT_Y} x2={SIDE_FOOT_X + 14} y2={FOOT_Y} color={shinColor} t={springT} width={2} />
+          {/* Sagittal skeleton — rotates forward on fall */}
+          <motion.g
+            style={{ transformOrigin: `${SIDE_FOOT_X}px ${FOOT_Y}px` }}
+            animate={{ rotate: fallActive ? 88 : 0 }}
+            transition={{ duration: 0.7, type: "spring", stiffness: 90, damping: 14 }}
+          >
+            {/* Foot bracket */}
+            <Bone x1={SIDE_FOOT_X - 5} y1={FOOT_Y} x2={SIDE_FOOT_X + 14} y2={FOOT_Y} color={shinColor} t={springT} width={2} />
 
-          <Bone x1={SIDE_FOOT_X} y1={FOOT_Y} x2={sag.kneeX} y2={sag.kneeY} color={shinColor} t={springT} />
-          <Bone x1={sag.kneeX} y1={sag.kneeY} x2={sag.hipX} y2={sag.hipY} color={thighColor} t={springT} />
+            <Bone x1={SIDE_FOOT_X} y1={FOOT_Y} x2={sag.kneeX} y2={sag.kneeY} color={shinColor} t={springT} />
+            <Bone x1={sag.kneeX} y1={sag.kneeY} x2={sag.hipX} y2={sag.hipY} color={thighColor} t={springT} />
 
-          {/* Pelvis tick */}
-          <Bone x1={sag.hipX - 4} y1={sag.hipY} x2={sag.hipX + 8} y2={sag.hipY} color={pelvisColor} t={springT} width={3.5} />
+            {/* Pelvis tick */}
+            <Bone x1={sag.hipX - 4} y1={sag.hipY} x2={sag.hipX + 8} y2={sag.hipY} color={pelvisColor} t={springT} width={3.5} />
 
-          {/* Spine, neck, head */}
-          <Bone x1={sag.hipX} y1={sag.hipY} x2={sagShoulderX} y2={sagShoulderY} color={spineColor} t={springT} width={3.5} />
-          <Bone x1={sagShoulderX} y1={sagShoulderY} x2={sagNeckX} y2={sagNeckY} color={spineColor} t={springT} />
-          <motion.circle
-            cx={sagHeadX}
-            cy={sagHeadY}
-            r={HEAD_R}
-            fill="none"
-            stroke={spineColor}
-            strokeWidth="2.25"
-            animate={{ cx: sagHeadX, cy: sagHeadY }}
-            transition={springT}
-          />
+            {/* Spine, neck, head */}
+            <Bone x1={sag.hipX} y1={sag.hipY} x2={sagShoulderX} y2={sagShoulderY} color={spineColor} t={springT} width={3.5} />
+            <Bone x1={sagShoulderX} y1={sagShoulderY} x2={sagNeckX} y2={sagNeckY} color={spineColor} t={springT} />
+            <motion.circle
+              cx={sagHeadX}
+              cy={sagHeadY}
+              r={HEAD_R}
+              fill="none"
+              stroke={spineColor}
+              strokeWidth="2.25"
+              animate={{ cx: sagHeadX, cy: sagHeadY }}
+              transition={springT}
+            />
 
-          <Joint x={SIDE_FOOT_X} y={FOOT_Y} />
-          <Joint x={sag.kneeX} y={sag.kneeY} t={springT} />
-          <Joint x={sag.hipX} y={sag.hipY} t={springT} />
-          <Joint x={sagShoulderX} y={sagShoulderY} t={springT} />
+            <Joint x={SIDE_FOOT_X} y={FOOT_Y} />
+            <Joint x={sag.kneeX} y={sag.kneeY} t={springT} />
+            <Joint x={sag.hipX} y={sag.hipY} t={springT} />
+            <Joint x={sagShoulderX} y={sagShoulderY} t={springT} />
+          </motion.g>
 
           {/* ===== FRONTAL ===== */}
           {/* Plumb line from centerline */}

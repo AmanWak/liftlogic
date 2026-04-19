@@ -15,7 +15,7 @@ const ERROR_SEVERITY: Record<FormError, "danger" | "warn"> = {
   bar_path_deviation: "warn",
 };
 
-export function RepCard({ rep }: { rep: RepResult }) {
+export function RepCard({ rep, displayNumber }: { rep: RepResult; displayNumber: number | null }) {
   const [open, setOpen] = useState(false);
   const { analysis, coaching, coachingPending, coachingError } = rep;
   const isVoided = analysis.errorsDetected.includes("insufficient_depth");
@@ -38,14 +38,14 @@ export function RepCard({ rep }: { rep: RepResult }) {
       {/* Left rail: rep number + status */}
       <div className="flex flex-col items-start gap-1 pt-0.5">
         <span className="num font-mono text-[10px] leading-none text-muted">
-          REP
+          {isVoided ? "" : "REP"}
         </span>
         <span className={`num font-display text-2xl font-semibold leading-none tracking-tight ${isVoided ? "text-muted" : "text-foreground"}`}>
-          {String(analysis.repNumber).padStart(2, "0")}
+          {isVoided ? "—" : String(displayNumber ?? analysis.repNumber).padStart(2, "0")}
         </span>
         {isVoided && (
           <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-warn">
-            redo
+            voided
           </span>
         )}
       </div>

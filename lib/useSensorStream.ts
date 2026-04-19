@@ -4,7 +4,7 @@ import type { SensorFrame, FormAnalysis } from "./types";
 import { createRepDetector, type RepDetector } from "./repDetector";
 import { analyzeRep } from "./formAnalyzer";
 
-const SHALLOW_REP_COACHING = "Not deep enough — redo this rep.";
+const SHALLOW_REP_COACHING = "Not deep enough — try again.";
 
 function clientFallback(analysis: FormAnalysis): string {
   const error = analysis.errorsDetected[0];

@@ -3,7 +3,7 @@ import type { FormAnalysis } from "./types";
 import type { LiftAnalysis } from "./types-worker";
 
 const PURDUE_URL = "https://genai.rcac.purdue.edu/api/chat/completions";
-const PURDUE_MODEL = "mistral:latest";
+export const PURDUE_MODEL = "mistral:latest";
 const RECAP_TIMEOUT_MS = 25_000;
 const COACH_TIMEOUT_MS = 10_000;
 

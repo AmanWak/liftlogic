@@ -5,7 +5,9 @@ import { useSensorStream } from "@/lib/useSensorStream";
 import { useSettings } from "@/lib/useSettings";
 import { useVoice } from "@/lib/useVoice";
 import { useDemoMode } from "@/lib/useDemoMode";
+import type { DemoErrorKind } from "@/lib/useDemoMode";
 import { useLiveErrors } from "@/lib/useLiveErrors";
+import { useFallDetector } from "@/lib/useFallDetector";
 import { useConsoleSignature } from "@/lib/useConsoleSignature";
 import { DEFAULT_MOCK_URL } from "@/lib/config";
 import { ConnectionPill } from "@/components/ConnectionPill";
@@ -15,6 +17,8 @@ import { RepCard } from "@/components/RepCard";
 import { SettingsSheet } from "@/components/SettingsSheet";
 import { SessionSummary } from "@/components/SessionSummary";
 import { ModeSwitcher } from "@/components/ModeSwitcher";
+import { DemoPanel } from "@/components/DemoPanel";
+import { FallAlertOverlay } from "@/components/FallAlertOverlay";
 
 const STORAGE_KEY = "liftlogic:esp-url";
 
@@ -52,6 +56,7 @@ export default function Home() {
   const [sessionStart, setSessionStart] = useState<number | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [streak, setStreak] = useState(0);
+  const [fallAlertOpen, setFallAlertOpen] = useState(false);
   const summaryFiredRef = useRef(false);
   const lastRepTimeRef = useRef<number | null>(null);
   const formScoreRef = useRef<number | null>(null);
@@ -86,14 +91,15 @@ export default function Home() {
     if (repCount > 0) lastRepTimeRef.current = Date.now();
   }, [repCount]);
 
-  // Gap timer: trigger summary when no new rep for setGapSeconds (8 s in demo)
-  const effectiveGapSeconds = settings.demoMode ? 8 : settings.setGapSeconds;
+  // Gap timer: trigger summary when no new rep for setGapSeconds.
+  // Skip in demo mode — button-driven demo has no natural "session ended" moment.
   useEffect(() => {
+    if (settings.demoMode) return;
     if (repCount === 0 || summaryFiredRef.current) return;
     const interval = setInterval(() => {
       if (!lastRepTimeRef.current || summaryFiredRef.current) return;
       const gap = (Date.now() - lastRepTimeRef.current) / 1000;
-      if (gap >= effectiveGapSeconds) {
+      if (gap >= settings.setGapSeconds) {
         summaryFiredRef.current = true;
         const score = formScoreRef.current ?? 0;
         setStreak((prev) => (score >= 85 ? prev + 1 : 0));
@@ -101,7 +107,7 @@ export default function Home() {
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [repCount, effectiveGapSeconds]);
+  }, [repCount, settings.setGapSeconds, settings.demoMode]);
 
   useEffect(() => {
     if (settings.demoMode) setStatus("demo");
@@ -127,12 +133,33 @@ export default function Home() {
   const activeFrame = settings.demoMode ? demo.frame : frame;
   const baselineS2Pitch = activeFrame?.s2.pitch ?? null;
   const { flashTrigger } = useLiveErrors(activeFrame, baselineS2Pitch);
+  const { fallTrigger } = useFallDetector(activeFrame, settings.fallDetectionEnabled);
+
+  useEffect(() => {
+    if (fallTrigger === 0) return;
+    voice.cancel();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: open alert modal in response to detector event
+    setFallAlertOpen(true);
+  }, [fallTrigger, voice]);
+
   // Shallow reps (insufficient_depth) don't count toward rep count or form score
   const countedReps = reps.filter((r) => !r.analysis.errorsDetected.includes("insufficient_depth"));
   const effectiveRepCount = countedReps.length;
   const effectiveCleanReps = countedReps.filter((r) => r.analysis.errorsDetected.length === 0).length;
   const formScore = computeFormScore(countedReps);
   useEffect(() => { formScoreRef.current = formScore; }, [formScore]);
+
+  // Assign display numbers only to non-shallow reps (shallow reps show "—")
+  const displayMap = (() => {
+    const map = new Map<number, number | null>();
+    const reversed = [...reps].reverse();
+    let counter = 0;
+    for (const r of reversed) {
+      const voided = r.analysis.errorsDetected.includes("insufficient_depth");
+      map.set(r.analysis.repNumber, voided ? null : ++counter);
+    }
+    return map;
+  })();
   const now = Date.now(); // eslint-disable-line react-hooks/purity -- snapshot used only by SessionSummary on open
   const sessionDurationMs = sessionStart ? now - sessionStart : 0;
 
@@ -154,15 +181,18 @@ export default function Home() {
     voice.cancel();
     setSettingsOpen(false);
     setSummaryOpen(false);
+    setFallAlertOpen(false);
     summaryFiredRef.current = false;
     lastRepTimeRef.current = null;
-    if (settings.demoMode) demo.replay();
   };
 
   return (
     <main
-      className="mx-auto w-full max-w-[420px] px-3 pb-10"
-      style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+      className="mx-auto w-full max-w-[420px] px-3"
+      style={{
+        paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+        paddingBottom: settings.demoMode ? "10rem" : "2.5rem",
+      }}
     >
       <header className="mb-3 flex items-center justify-between gap-3 border border-border bg-surface px-3 py-2">
         <span
@@ -208,7 +238,12 @@ export default function Home() {
           repTarget={settings.repsPerSetTarget}
         />
 
-        <SensorSilhouette frame={activeFrame} baselineS2Pitch={baselineS2Pitch} flashTrigger={flashTrigger} />
+        <SensorSilhouette
+          frame={activeFrame}
+          baselineS2Pitch={baselineS2Pitch}
+          flashTrigger={flashTrigger}
+          fallActive={settings.demoMode && demo.isFalling}
+        />
 
         <section aria-label="coaching event log" className="pt-2">
           <div className="flex items-baseline justify-between px-1 pb-2">
@@ -221,15 +256,7 @@ export default function Home() {
               </span>
             </div>
             <div className="flex items-center gap-3">
-              {settings.demoMode && demo.completed && (
-                <button
-                  onClick={demo.replay}
-                  className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent hover:brightness-110"
-                >
-                  replay ↻
-                </button>
-              )}
-              {reps.length > 0 && (
+              {reps.length > 0 && !settings.demoMode && (
                 <button
                   onClick={handleReset}
                   className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted hover:text-foreground"
@@ -245,24 +272,38 @@ export default function Home() {
               <div className="border border-dashed border-border px-5 py-10 text-center">
                 <div className="mx-auto mb-3 h-px w-10 bg-border-strong" />
                 <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted">
-                  {settings.demoMode ? "demo · priming" : "awaiting first rep"}
+                  {settings.demoMode ? "demo · ready" : "awaiting first rep"}
                 </div>
                 <div className="mt-2 text-sm text-muted-strong text-balance">
                   {settings.demoMode
-                    ? "Seven scripted reps every 3.5 s — the last is intentionally shallow to demo the redo feature."
+                    ? "Tap a button below to inject an error into the log."
                     : "Start your workout — each rep drops into the log with AI-generated coaching."}
                 </div>
               </div>
             ) : (
               <div className="border-t border-border">
                 {reps.map((rep) => (
-                  <RepCard key={rep.analysis.repNumber} rep={rep} />
+                  <RepCard
+                    key={rep.analysis.repNumber}
+                    rep={rep}
+                    displayNumber={displayMap.get(rep.analysis.repNumber) ?? null}
+                  />
                 ))}
               </div>
             )}
           </AnimatePresence>
         </section>
       </div>
+
+      <DemoPanel
+        open={settings.demoMode}
+        isAnimating={demo.isAnimating}
+        onTrigger={(kind: DemoErrorKind) => demo.triggerRep(kind)}
+        onFall={demo.triggerFall}
+        onReset={handleReset}
+      />
+
+      <FallAlertOverlay open={fallAlertOpen} onDismiss={() => setFallAlertOpen(false)} />
 
       <SettingsSheet
         open={settingsOpen}

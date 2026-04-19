@@ -24,6 +24,11 @@ export function useVoice(enabled: boolean, premium: boolean = false): UseVoiceRe
   const currentUrlRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const unlockedRef = useRef(false);
+  const playingRef = useRef(false);
+  const pendingRef = useRef<string | null>(null);
+  // Stable ref so the "ended" listener closure can call speakPremium without
+  // being stale — it reads from this ref rather than closing over the function.
+  const speakPremiumRef = useRef<((text: string) => void) | null>(null);
   const supported = typeof window !== "undefined";
 
   useEffect(() => {
@@ -31,7 +36,17 @@ export function useVoice(enabled: boolean, premium: boolean = false): UseVoiceRe
     audioRef.current = new Audio();
     audioRef.current.preload = "auto";
     const el = audioRef.current;
+    const handleEnded = () => {
+      playingRef.current = false;
+      const next = pendingRef.current;
+      if (next !== null) {
+        pendingRef.current = null;
+        Promise.resolve().then(() => speakPremiumRef.current?.(next));
+      }
+    };
+    el.addEventListener("ended", handleEnded);
     return () => {
+      el.removeEventListener("ended", handleEnded);
       el.pause();
       if (currentUrlRef.current) URL.revokeObjectURL(currentUrlRef.current);
       currentUrlRef.current = null;
@@ -68,6 +83,8 @@ export function useVoice(enabled: boolean, premium: boolean = false): UseVoiceRe
   const cancel = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    pendingRef.current = null;
+    playingRef.current = false;
     const a = audioRef.current;
     if (a) {
       a.pause();
@@ -78,16 +95,12 @@ export function useVoice(enabled: boolean, premium: boolean = false): UseVoiceRe
     }
   }, []);
 
-  const speak = useCallback(
+  const speakPremium = useCallback(
     async (text: string) => {
       if (!supported || !enabled) return;
-      const trimmed = text.trim();
-      if (!trimmed) return;
-
-      cancel();
-
-      if (!premium) {
-        fallbackSpeak(trimmed);
+      if (playingRef.current) {
+        // Queue latest; drop any older pending (last-write-wins)
+        pendingRef.current = text;
         return;
       }
 
@@ -98,7 +111,7 @@ export function useVoice(enabled: boolean, premium: boolean = false): UseVoiceRe
         const res = await fetch("/api/tts", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text: trimmed }),
+          body: JSON.stringify({ text }),
           signal: controller.signal,
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -111,18 +124,42 @@ export function useVoice(enabled: boolean, premium: boolean = false): UseVoiceRe
 
         const a = audioRef.current;
         if (!a) {
-          fallbackSpeak(trimmed);
+          fallbackSpeak(text);
           return;
         }
         a.src = url;
+        playingRef.current = true;
         await a.play();
       } catch (err) {
+        playingRef.current = false;
         if (controller.signal.aborted) return;
         if (err instanceof Error) console.warn("[useVoice] ElevenLabs failed, falling back:", err.message);
-        fallbackSpeak(trimmed);
+        fallbackSpeak(text);
       }
     },
-    [supported, enabled, premium, cancel],
+    [supported, enabled],
+  );
+
+  // Keep speakPremiumRef in sync so the "ended" closure always calls the latest version
+  useEffect(() => {
+    speakPremiumRef.current = speakPremium;
+  }, [speakPremium]);
+
+  const speak = useCallback(
+    (text: string) => {
+      if (!supported || !enabled) return;
+      const trimmed = text.trim();
+      if (!trimmed) return;
+
+      if (!premium) {
+        // Fallback: speechSynthesis handles its own interruption/queueing
+        fallbackSpeak(trimmed);
+        return;
+      }
+
+      void speakPremium(trimmed);
+    },
+    [supported, enabled, premium, speakPremium],
   );
 
   useEffect(() => {

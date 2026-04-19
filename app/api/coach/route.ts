@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { coachRep } from "@/lib/purdue";
+import { coachRep } from "@/lib/gemini";
+import { coachRep as coachRepPurdue, PURDUE_MODEL } from "@/lib/purdue";
+import { aiRateLimit } from "@/lib/aiRateLimit";
+import { GEMINI_MODEL } from "@/lib/config";
 import { FORM_ERROR_LABEL, type FormAnalysis } from "@/lib/types";
 
 function demoCoaching(a: FormAnalysis): string {
@@ -12,29 +15,12 @@ function demoCoaching(a: FormAnalysis): string {
   return `${label} flagged on rep ${a.repNumber}. [Demo mode — set GEMINI_API_KEY in .env.local for AI coaching.]`;
 }
 
-export const runtime = "nodejs";
-
-const RATE_WINDOW_MS = 60_000;
-const RATE_MAX_REQUESTS = 15; // stay under Purdue's 20/min hard limit
-const rateBuckets = new Map<string, number[]>();
-
-function rateLimit(ip: string): boolean {
-  const now = Date.now();
-  const cutoff = now - RATE_WINDOW_MS;
-  const hits = (rateBuckets.get(ip) ?? []).filter((t) => t > cutoff);
-  if (hits.length >= RATE_MAX_REQUESTS) {
-    rateBuckets.set(ip, hits);
-    return false;
-  }
-  hits.push(now);
-  rateBuckets.set(ip, hits);
-  if (rateBuckets.size > 1000) {
-    for (const [k, v] of rateBuckets) {
-      if (v.every((t) => t <= cutoff)) rateBuckets.delete(k);
-    }
-  }
-  return true;
+function isGeminiQuotaError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("429") || lower.includes("quota") || lower.includes("resource_exhausted") || lower.includes("rate limit");
 }
+
+export const runtime = "nodejs";
 
 function clientIp(req: NextRequest): string {
   const fwd = req.headers.get("x-forwarded-for");
@@ -64,10 +50,10 @@ const analysisSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  if (!rateLimit(clientIp(req))) {
+  if (!aiRateLimit(clientIp(req))) {
     return NextResponse.json(
       { error: "Too many requests" },
-      { status: 429, headers: { "Retry-After": "10" } },
+      { status: 429, headers: { "Retry-After": "60" } },
     );
   }
 
@@ -91,19 +77,38 @@ export async function POST(req: NextRequest) {
     const coaching = await coachRep(parsed.data);
     return NextResponse.json({
       coaching,
-      model: "llama3.1:latest",
+      model: GEMINI_MODEL,
       latencyMs: Date.now() - start,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     console.error("[/api/coach]", message);
 
-    if (process.env.NODE_ENV !== "production" && message.includes("PURDUE_GENAISTUDIO_API_KEY")) {
+    if (process.env.NODE_ENV !== "production" && message.includes("GEMINI_API_KEY")) {
       return NextResponse.json({
         coaching: demoCoaching(parsed.data),
         model: "demo-mode",
         latencyMs: Date.now() - start,
       });
+    }
+
+    if (isGeminiQuotaError(message)) {
+      try {
+        const coaching = await coachRepPurdue(parsed.data);
+        return NextResponse.json({
+          coaching,
+          model: PURDUE_MODEL,
+          latencyMs: Date.now() - start,
+        });
+      } catch (fallbackErr) {
+        const fallbackMessage =
+          fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
+        console.error("[/api/coach] purdue fallback failed:", fallbackMessage);
+        return NextResponse.json(
+          { error: "Too many requests" },
+          { status: 429, headers: { "Retry-After": "60" } },
+        );
+      }
     }
 
     return NextResponse.json(

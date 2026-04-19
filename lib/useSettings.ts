@@ -16,7 +16,7 @@ const DEFAULTS: Settings = {
   voiceEnabled: true,
   premiumVoice: false,
   demoMode: false,
-  streamEnabled: true,
+  streamEnabled: false,
   setGapSeconds: 20,
   repsPerSetTarget: 10,
   fallDetectionEnabled: true,
