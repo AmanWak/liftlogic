@@ -1,6 +1,8 @@
-# LiftLogic — Squat Coach
+# Kinematech (LiftLogic) — Squat Coach
 
-Mobile-first PWA that reads a 4-IMU garment over WebSocket, detects squat reps, flags form errors, and pipes each rep to Gemini for concise coaching. Built for StarkHacks.
+**Won at StarkHacks 2026, the World's Largest Hardware Hackathon.** Kinematech is the team project; LiftLogic is the app.
+
+Mobile-first PWA that reads a 5-IMU garment over WebSocket, detects squat reps, flags form errors, and pipes each rep to Gemini for concise coaching. Built for StarkHacks. I wrote all the software; my teammates built the hardware.
 
 ## Setup
 
@@ -65,7 +67,7 @@ npm run build       # production build
 ## Demo runbook (90s)
 
 1. **Pre-flight** (before judges arrive): laptop + phone on venue WiFi, phone charged ≥70%, mock running, both browsers open, ESP32 powered and IP copied into settings sheet. Verify one real rep appears before stepping away.
-2. **Open** (15s): "LiftLogic — squat-form coaching through 4 IMUs on the body. Real-time silhouette on the phone, AI coaching per rep."
+2. **Open** (15s): "LiftLogic — squat-form coaching through 5 IMUs on the body. Real-time silhouette on the phone, AI coaching per rep."
 3. **Show the garment** (15s): point out `s1`/`s2`/`s3`/`s4` placements (upper back, sacrum, two thighs).
 4. **Live reps** (45s): do 3 squats — clean, knee valgus, shallow. Judges watch silhouette bend, then coaching cards drop in.
 5. **Close** (15s): "Gemini 2.5 Flash turns the rules-based analysis into a coach. Next up: bar path via s5 and rep-history trend tracking."
